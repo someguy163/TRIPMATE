@@ -1,0 +1,69 @@
+-- C:\xampp\mysql\bin\mysql.exe -u root < tripmate.sql
+CREATE DATABASE IF NOT EXISTS tripmate CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE tripmate;
+
+CREATE TABLE IF NOT EXISTS users (
+  id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  kakao_id    BIGINT UNSIGNED NOT NULL UNIQUE,
+  nickname    VARCHAR(100) NOT NULL,
+  profile_img VARCHAR(500) NULL,
+  is_admin    TINYINT(1) NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS trips (
+  id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  title       VARCHAR(100) NOT NULL,
+  start_date  DATE NULL,            -- 여행 기간: 이 안에서만 일정을 만들 수 있다
+  end_date    DATE NULL,
+  invite_code CHAR(12) NOT NULL UNIQUE,
+  owner_id    INT UNSIGNED NOT NULL,
+  chosen_place_id INT UNSIGNED NULL, -- 방장이 확정한 여행지
+  FOREIGN KEY (owner_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS trip_members (
+  trip_id INT UNSIGNED NOT NULL,
+  user_id INT UNSIGNED NOT NULL,
+  PRIMARY KEY (trip_id, user_id),
+  FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- 여행지 후보
+CREATE TABLE IF NOT EXISTS places (
+  id       INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  trip_id  INT UNSIGNED NOT NULL,
+  name     VARCHAR(100) NOT NULL,
+  memo     VARCHAR(255) NOT NULL DEFAULT '',
+  url      VARCHAR(255) NULL,
+  lat      DECIMAL(9,6) NULL,             -- 카카오맵 검색으로 고른 장소의 좌표
+  lng      DECIMAL(9,6) NULL,
+  added_by INT UNSIGNED NOT NULL,
+  FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
+  FOREIGN KEY (added_by) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS votes (
+  place_id INT UNSIGNED NOT NULL,
+  user_id  INT UNSIGNED NOT NULL,
+  PRIMARY KEY (place_id, user_id),
+  FOREIGN KEY (place_id) REFERENCES places(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- 일정
+CREATE TABLE IF NOT EXISTS plans (
+  id       INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  trip_id  INT UNSIGNED NOT NULL,
+  day      DATE NOT NULL,
+  at_time  TIME NULL,              -- 시작 시간
+  end_time TIME NULL,              -- 종료 시간
+  title    VARCHAR(150) NOT NULL,
+  place    VARCHAR(100) NULL,             -- 일정 장소 (lat/lng 가 있으면 지도에 표시)
+  lat      DECIMAL(9,6) NULL,
+  lng      DECIMAL(9,6) NULL,
+  done     TINYINT(1) NOT NULL DEFAULT 0,
+  added_by INT UNSIGNED NOT NULL,
+  FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
+  FOREIGN KEY (added_by) REFERENCES users(id)
+);
