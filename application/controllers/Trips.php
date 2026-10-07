@@ -227,12 +227,63 @@ class Trips extends CI_Controller {
 	public function add_plan($trip_id)
 	{
 		$this->_member($trip_id);
-		$trip  = $this->db->get_where('trips', ['id' => $trip_id])->row();
+		$trip = $this->db->get_where('trips', ['id' => $trip_id])->row();
+		$back = "trip/$trip_id#plans";
+		$this->db->insert('plans', $this->_plan_input($trip, $back) + ['trip_id' => $trip_id, 'added_by' => $this->uid]);
+		redirect($back);
+	}
+
+	// the person who wrote a plan can change it; an admin can change any plan (even in a group they are not in)
+	public function edit_plan($plan_id)
+	{
+		$plan = $this->db->get_where('plans', ['id' => $plan_id])->row();
+		if (!$plan) show_404();
+		$this->_login();
+		if (!$this->admin)
+		{
+			$this->_member($plan->trip_id);
+			if ($plan->added_by != $this->uid) show_error('내가 만든 일정만 고칠 수 있어요.', 403);
+		}
+		$trip = $this->db->get_where('trips', ['id' => $plan->trip_id])->row();
+		$back = "trip/$plan->trip_id#plans";
+		$this->db->update('plans', $this->_plan_input($trip, $back), ['id' => $plan_id]);
+		$this->session->set_flashdata('ok', '일정을 수정했어요.');
+		redirect($back);
+	}
+
+	// the group's name and trip dates: the owner or an admin. Plans already made must still fit inside the new dates
+	public function edit_trip($trip_id)
+	{
+		$trip = $this->db->get_where('trips', ['id' => $trip_id])->row();
+		if (!$trip) show_404();
+		$this->_login();
+		if (!$this->admin)
+		{
+			$this->_member($trip_id);
+			if ($trip->owner_id != $this->uid) show_error('방장만 모임 정보를 고칠 수 있어요.', 403);
+		}
+		$title = trim((string) $this->input->post('title'));
+		$start = $this->_date($this->input->post('start_date'));
+		$end   = $this->_date($this->input->post('end_date'));
+		$back  = "trip/$trip_id";
+		if ($title === '' || !$start || !$end) $this->_fail('모임 이름과 여행 날짜를 모두 입력해 주세요.', $back);
+		if ($end < $start) $this->_fail('여행이 끝나는 날은 시작하는 날보다 빠를 수 없어요.', $back);
+		$outside = $this->db->where('trip_id', $trip_id)->group_start()->where('day <', $start)->or_where('day >', $end)->group_end()->count_all_results('plans');
+		if ($outside) $this->_fail("이미 만든 일정 {$outside}개가 새 여행 기간 밖에 있어요. 일정을 먼저 고치거나 기간을 더 넓게 잡아 주세요.", $back);
+
+		$this->db->update('trips', ['title' => mb_substr($title, 0, 100), 'start_date' => $start, 'end_date' => $end], ['id' => $trip_id]);
+		$this->session->set_flashdata('ok', '모임 정보를 수정했어요.');
+		redirect($back);
+	}
+
+	// the validated plan fields from the form (date inside the trip dates, end after start).
+	// On bad input it shows the reason and goes back, so callers only ever see good data.
+	private function _plan_input($trip, $back)
+	{
 		$day   = $this->_date($this->input->post('day'));
 		$from  = $this->_time($this->input->post('at_time'));
 		$to    = $this->_time($this->input->post('end_time'));
 		$title = trim((string) $this->input->post('title'));
-		$back  = "trip/$trip_id#plans";
 
 		if (!$day || !$from || !$to || $title === '') $this->_fail('날짜, 시작·종료 시간, 내용을 모두 입력해 주세요.', $back);
 		// the trip dates are the limit (older trips without dates stay unrestricted)
@@ -244,8 +295,7 @@ class Trips extends CI_Controller {
 
 		$place = mb_substr(trim((string) $this->input->post('place')), 0, 100);
 		list($lat, $lng) = $place === '' ? [null, null] : $this->_coords($this->input->post('lat'), $this->input->post('lng'));
-		$this->db->insert('plans', [
-			'trip_id'  => $trip_id,
+		return [
 			'day'      => $day,
 			'at_time'  => $from,
 			'end_time' => $to,
@@ -253,9 +303,7 @@ class Trips extends CI_Controller {
 			'place'    => $place === '' ? null : $place,
 			'lat'      => $lat,
 			'lng'      => $lng,
-			'added_by' => $this->uid,
-		]);
-		redirect($back);
+		];
 	}
 
 	// check / uncheck a plan as done (shared by the whole group)

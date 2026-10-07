@@ -11,8 +11,15 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&display=swap">
 <link rel="stylesheet" href="<?= base_url('assets/app.css') ?>?v=<?= filemtime(FCPATH . 'assets/app.css') ?>">
+<script src="<?= base_url('assets/app.js') ?>?v=<?= filemtime(FCPATH . 'assets/app.js') ?>" defer></script>
+<noscript><style>#topbar { display:none; }</style></noscript><!-- without JS nothing would ever finish the bar -->
 </head>
 <body>
+<div id="topbar" aria-hidden="true"></div>
+<script>/* start the bar right after the first paint so it grows from 0 (a class present at first render would not animate);
+   the timer is for tabs that do not paint (hidden / background). app.js finishes the bar on window load */
+(function () { var b = document.getElementById('topbar'), go = function () { if (document.readyState !== 'complete') b.classList.add('run'); }; requestAnimationFrame(go); setTimeout(go, 60); })();</script>
+<div id="pageloader" class="pageloader" role="status" hidden><span class="spin"></span><span>불러오는 중…</span></div>
 <header class="top">
 	<div class="wrap">
 		<a class="logo" href="<?= site_url('/') ?>">

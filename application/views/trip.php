@@ -7,6 +7,7 @@ $last = $plans ? end($plans)->day : (string) $trip->start_date;     // pre-fill 
 if ($trip->start_date && ($last < $trip->start_date || $last > $trip->end_date)) $last = $trip->start_date;
 $week = ['일', '월', '화', '수', '목', '금', '토'];
 $owner  = $trip->owner_id == $me;
+$can_edit_trip = $owner || !empty($is_admin); // the owner (who made the group) or an admin
 $chosen = null;
 foreach ($places as $p) if ($p->id == $trip->chosen_place_id) $chosen = $p;
 $nights = $trip->start_date ? (int) round((strtotime($trip->end_date) - strtotime($trip->start_date)) / 86400) : 0;
@@ -38,6 +39,20 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 		<button type="button" class="btn btn-primary" data-copy data-url="<?= html_escape(site_url('join/' . $trip->invite_code)) ?>">초대 링크 복사</button>
 	<?php endif ?>
 </section>
+
+<?php if ($can_edit_trip): ?>
+	<button type="button" class="btn btn-quiet" id="editTripBtn">✎ 모임 이름·기간 수정</button>
+	<?= form_open("trip/$trip->id/edit", ['id' => 'tripEdit', 'class' => 'trip-edit', 'hidden' => 'hidden']) ?>
+		<label class="f wide">모임 이름<input type="text" name="title" value="<?= html_escape($trip->title) ?>" maxlength="100" required></label>
+		<label class="f">여행 시작<input type="date" name="start_date" value="<?= html_escape($trip->start_date) ?>" required></label>
+		<label class="f">여행 끝<input type="date" name="end_date" value="<?= html_escape($trip->end_date) ?>" required></label>
+		<p class="muted wide">이미 만든 일정이 새 기간 밖에 있으면 저장되지 않아요. 일정을 먼저 고쳐 주세요.</p>
+		<div class="wide edit-actions">
+			<button class="btn btn-primary">저장</button>
+			<button type="button" class="btn btn-quiet" id="editTripCancel">취소</button>
+		</div>
+	</form>
+<?php endif ?>
 
 <?php if ($n === 1 && $owner): ?>
 	<section class="invite-first">
@@ -122,6 +137,7 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 		<h2>일정</h2>
 		<?php if ($mapped && $js_key): ?>
 			<div class="mapbox">
+				<div id="maploading" class="maploading" role="status"><span class="spin"></span>지도를 불러오는 중…</div>
 				<div id="map" aria-label="일정 장소를 한눈에 보는 지도"></div>
 				<div class="legend">
 					<?php foreach (array_unique(array_column($mapped, 'dn')) as $d): ?><span class="legend-i line-<?= ($d - 1) % 5 ?>"><span class="day-pill"><?= $d ?>일차</span></span><?php endforeach ?>
@@ -152,11 +168,18 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 						<span class="what"><?= html_escape($pl->title) ?></span>
 						<?php if ($pl->place): ?><small class="where">📍 <?= html_escape($pl->place) ?></small><?php endif ?>
 					</span>
+					<?php if (!empty($is_admin) || $pl->added_by == $me): // only the writer (or an admin) sees the edit button ?>
+						<button type="button" class="pencil" aria-label="일정 수정" data-edit-plan="<?= html_escape(json_encode([
+							'id' => (int) $pl->id, 'day' => $pl->day, 'start' => substr((string) $pl->at_time, 0, 5), 'end' => substr((string) $pl->end_time, 0, 5),
+							'title' => $pl->title, 'place' => (string) $pl->place, 'lat' => $pl->lat, 'lng' => $pl->lng,
+						], JSON_UNESCAPED_UNICODE)) ?>">✎</button>
+					<?php endif ?>
 					<?= form_open("plan/$pl->id/delete") ?><button class="x" aria-label="일정 삭제">✕</button></form>
 				</li>
 		<?php endforeach; if ($plans) echo '</ol></div>'; ?>
 
 		<?= form_open("trip/$trip->id/plan", ['class' => 'plan-form']) ?>
+			<p class="edit-note wide" id="editNote" hidden>일정을 수정하는 중이에요</p>
 			<label class="f wide">날짜<input type="date" name="day" value="<?= html_escape($last) ?>"<?= $trip->start_date ? ' min="' . $trip->start_date . '" max="' . $trip->end_date . '"' : '' ?> required></label>
 			<label class="f">몇 시부터<input type="time" name="at_time" required></label>
 			<label class="f">몇 시까지<input type="time" name="end_time" required></label>
@@ -198,10 +221,11 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 const MAP_PLANS = <?= json_encode($mapped, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
 let kmap = null, kfit = () => {};
 function drawMap() {
-	const box = document.getElementById('map');
+	const box = document.getElementById('map'), loading = document.getElementById('maploading');
+	const loaded = () => { if (loading) loading.hidden = true; };
 	if (!box || !MAP_PLANS.length) return;
 	if (typeof kakao === 'undefined' || !kakao.maps) {
-		box.className = 'map-fail'; box.textContent = '지도를 불러오지 못했어요. JavaScript 키와 사이트 도메인 등록을 확인해 주세요.';
+		loaded(); box.className = 'map-fail'; box.textContent = '지도를 불러오지 못했어요. JavaScript 키와 사이트 도메인 등록을 확인해 주세요.';
 		return;
 	}
 	kakao.maps.load(() => {
@@ -209,6 +233,8 @@ function drawMap() {
 		const css = getComputedStyle(document.documentElement), byDay = {}, bounds = new kakao.maps.LatLngBounds();
 		const first = new kakao.maps.LatLng(MAP_PLANS[0].lat, MAP_PLANS[0].lng);
 		kmap = new kakao.maps.Map(box, { center: first, level: 7 });
+		kakao.maps.event.addListener(kmap, 'tilesloaded', loaded);
+		setTimeout(loaded, 8000); // never leave the loader up if that event does not come
 		const info = new kakao.maps.InfoWindow({ removable: true, zIndex: 5 });
 		const spots = {}; // plans at the same spot share one pin, so a place used twice (airport, hotel) is not hidden
 		MAP_PLANS.forEach((p, i) => {
@@ -289,7 +315,7 @@ function refreshNow() {
 	card.querySelector('.nc-sub').textContent = sub;
 	const b = document.getElementById('nc-done');
 	b.hidden = !btn;
-	b.onclick = () => s.querySelector('.dot').click();
+	b.onclick = () => { b.classList.add('busy'); s.querySelector('.dot').click(); };
 	card.hidden = false;
 }
 refreshNow(); setInterval(refreshNow, 60000);
@@ -329,10 +355,19 @@ document.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => {
 });
 
 // Kakao Map keyword search, shared by the candidate search and the plan's place field (API text goes in via textContent)
-async function kakaoSearch(query, ul, pick) {
-	const note = t => { const x = document.createElement('li'); x.className = 'note muted'; x.textContent = t; ul.append(x); };
+async function kakaoSearch(query, ul, pick, btn) {
+	const note = (t, spin) => {
+		const x = document.createElement('li'); x.className = 'note muted';
+		if (spin) { const s = document.createElement('span'); s.className = 'spin'; x.append(s); }
+		x.append(t); ul.append(x);
+	};
+	ul.textContent = ''; note('카카오맵에서 찾는 중…', true);
+	if (btn) btn.classList.add('busy');
+	let r;
+	try { r = await (await fetch('<?= site_url('trips/search') ?>?q=' + encodeURIComponent(query))).json(); }
+	catch (_) { ul.textContent = ''; return note('검색에 실패했어요. 잠시 뒤 다시 시도해 주세요.'); }
+	finally { if (btn) btn.classList.remove('busy'); }
 	ul.textContent = '';
-	const r = await (await fetch('<?= site_url('trips/search') ?>?q=' + encodeURIComponent(query))).json();
 	if (r.error) return note(r.error);
 	if (!r.items.length) return note('검색 결과가 없어요. 다른 이름으로 검색해 보세요.');
 	r.items.forEach(p => {
@@ -350,8 +385,9 @@ document.getElementById('search').onsubmit = e => {
 	kakaoSearch(q.value, document.getElementById('results'), p => {
 		const f = document.getElementById('placeForm'), x = f.elements;
 		x.name.value = p.name; x.memo.value = p.addr; x.url.value = p.url; x.lat.value = p.lat; x.lng.value = p.lng;
+		tmLoading.form(f); // form.submit() fires no submit event, so start the loading state by hand
 		f.submit();
-	});
+	}, e.submitter);
 };
 
 // plan place: a place picked from the search lands on the map; typing one by hand clears the position (none is known)
@@ -361,10 +397,42 @@ placeBtn.onclick = () => {
 	if (v) kakaoSearch(v, document.getElementById('planres'), p => {
 		pf.place.value = p.name; pf.lat.value = p.lat; pf.lng.value = p.lng;
 		if (!pf.title.value) pf.title.value = p.name;
-	});
+	}, placeBtn);
 };
 pf.place.addEventListener('input', () => { pf.lat.value = pf.lng.value = ''; });
 pf.place.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); placeBtn.click(); } });
+
+// edit a plan: it goes into the form at the bottom, and saving updates it instead of adding a new one
+const planForm = document.querySelector('.plan-form'), planSubmit = planForm.querySelector('.btn-primary'), addAction = planForm.getAttribute('action');
+const cancelPlanEdit = document.createElement('button'), editNote = document.getElementById('editNote');
+cancelPlanEdit.type = 'button'; cancelPlanEdit.className = 'btn btn-quiet'; cancelPlanEdit.textContent = '수정 취소'; cancelPlanEdit.hidden = true;
+planSubmit.after(cancelPlanEdit);
+cancelPlanEdit.onclick = () => {
+	planForm.setAttribute('action', addAction); planForm.reset();
+	planSubmit.textContent = '일정 추가'; cancelPlanEdit.hidden = true; editNote.hidden = true; planForm.classList.remove('editing');
+	syncTimes();
+};
+document.querySelectorAll('[data-edit-plan]').forEach(b => b.onclick = () => {
+	const p = JSON.parse(b.dataset.editPlan);
+	tab('plans');
+	planForm.setAttribute('action', '<?= site_url('plan') ?>/' + p.id + '/edit');
+	pf.day.value = p.day; pf.at_time.value = p.start; pf.end_time.value = p.end; pf.title.value = p.title;
+	pf.place.value = p.place; pf.lat.value = p.lat === null ? '' : p.lat; pf.lng.value = p.lng === null ? '' : p.lng;
+	planSubmit.textContent = '수정 저장'; cancelPlanEdit.hidden = false; editNote.hidden = false; planForm.classList.add('editing');
+	syncTimes();
+	planForm.scrollIntoView({ block: 'center', behavior: 'smooth' });
+	pf.title.focus({ preventScroll: true });
+});
+
+// edit the group's name and trip dates (owner or admin)
+const tripEdit = document.getElementById('tripEdit');
+if (tripEdit) {
+	const te = tripEdit.elements;
+	document.getElementById('editTripBtn').onclick = () => { tripEdit.hidden = false; te.title.focus(); };
+	document.getElementById('editTripCancel').onclick = () => { tripEdit.reset(); tripEdit.hidden = true; };
+	te.start_date.onchange = e => { te.end_date.min = e.target.value; if (!te.end_date.value || te.end_date.value < e.target.value) te.end_date.value = e.target.value; };
+	te.end_date.min = te.start_date.value;
+}
 </script>
 
 <?php $this->load->view('footer'); ?>

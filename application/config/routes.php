@@ -66,3 +66,5 @@ $route['place/(:num)/choose']   = 'trips/choose/$1';
 $route['trip/(:num)/delete']    = 'trips/del_trip/$1';
 $route['plan/(:num)/done']      = 'trips/done_plan/$1';
 $route['trip/(:num)/leave']     = 'trips/leave/$1';
+$route['plan/(:num)/edit']      = 'trips/edit_plan/$1';
+$route['trip/(:num)/edit']      = 'trips/edit_trip/$1';

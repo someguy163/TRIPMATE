@@ -146,7 +146,7 @@ form { margin:0; }
 .invite-first p { margin-bottom:14px; }
 .admin-note, .notice { margin:16px 0 0; padding:10px 16px; border-radius:12px; background:var(--sea-soft); color:var(--sea); font-size:14px; font-weight:600; }
 /* admin looking at a group they are not in: read only (the server refuses writes anyway) */
-.view-only .searchbar, .view-only .results, .view-only .manual, .view-only .plan-form, .view-only .danger,
+.view-only .searchbar, .view-only #results, .view-only .manual, .view-only .plan-form:not(.editing), .view-only .danger,
 .view-only .acts, .view-only .x, .view-only [data-copy], .view-only #nc-done, .view-only .invite-first { display:none !important; }
 .view-only .dot, .view-only .vote { pointer-events:none; }
 .manual { margin:16px 0 0; }
@@ -200,9 +200,34 @@ form { margin:0; }
 .pin { min-width:30px; height:30px; padding:0 7px; border:3px solid #fff; border-radius:15px; color:var(--on-line); font:700 13px/1 var(--font); display:grid; place-items:center; cursor:pointer; box-shadow:0 1px 4px rgba(0,0,0,.35); }
 .pin.done { opacity:.55; }
 .iw { padding:8px 14px; font:14px/1.45 var(--font); color:#14212B; white-space:nowrap; }
-.x { width:36px; height:36px; border:0; border-radius:50%; background:none; color:var(--muted); font-size:15px; cursor:pointer; }
-.x:hover { background:var(--line); }
+.x, .pencil { width:36px; height:36px; border:0; border-radius:50%; background:none; color:var(--muted); font-size:15px; cursor:pointer; }
+.x:hover, .pencil:hover { background:var(--line); }
+.plan-form.editing { border-color:var(--sea); box-shadow:0 0 0 3px var(--sea-soft); }
+.edit-note { margin:0; color:var(--sea); font-size:14px; font-weight:700; }
+.trip-edit { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:12px; padding:16px; border:1.5px solid var(--sea); border-radius:var(--r); background:var(--surface); }
+.trip-edit > .wide { grid-column:1 / -1; }
+.trip-edit p.wide { margin:0; }
+.edit-actions { display:flex; gap:8px; }
 .plan-form { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:16px; border:1.5px solid var(--line); border-radius:var(--r); background:var(--surface); }
 .plan-form input[name=title], .plan-form .btn { grid-column:1 / -1; }
 
-@media (prefers-reduced-motion: reduce) { .bar i { animation:none; } * { transition:none !important; } }
+/* loading feedback (assets/app.js adds .run / .busy) */
+#topbar { position:fixed; left:0; top:0; z-index:100; height:4px; width:0; opacity:0; pointer-events:none; background:linear-gradient(90deg,var(--sea),var(--citrus)); box-shadow:0 0 8px color-mix(in srgb,var(--citrus) 70%,transparent); }
+#topbar.run { opacity:1; width:88%; transition:width 10s cubic-bezier(.05,.6,.2,1); animation:bar-timeout 0s linear 25s forwards; } /* eases toward 88% and waits; the animation is a safety net if app.js never finishes it */
+#topbar.done { opacity:0; width:100%; transition:width .2s ease-out, opacity .4s ease .25s; }
+@keyframes bar-timeout { to { opacity:0; } }
+/* shown by app.js when a page change takes longer than ~0.7s (slow hosting / connection) */
+.pageloader { position:fixed; inset:0; z-index:90; display:grid; grid-auto-flow:row; place-content:center; justify-items:center; gap:14px; background:color-mix(in srgb,var(--paper) 72%,transparent); backdrop-filter:blur(3px); color:var(--ink); font-weight:600; }
+.pageloader .spin { width:30px; height:30px; border-width:3px; color:var(--sea); }
+@keyframes spin { to { transform:rotate(360deg); } }
+.spin, .btn.busy::before { display:inline-block; width:.95em; height:.95em; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:spin .7s linear infinite; }
+.spin { vertical-align:-.12em; }
+.btn.busy::before { content:""; }
+.busy { opacity:.7; pointer-events:none; cursor:progress; }
+.note .spin { margin-right:6px; }
+.mapbox { position:relative; }
+.maploading { position:absolute; left:0; right:0; top:0; height:300px; z-index:5; display:grid; grid-auto-flow:column; place-content:center; gap:10px; border-radius:var(--r); background:var(--line); color:var(--muted); font-size:14px; }
+
+@media (prefers-reduced-motion: reduce) {
+	.spin, .btn.busy::before { animation-duration:2.4s; }
+	#topbar.run, #topbar.done { transition:none; } .bar i { animation:none; } * { transition:none !important; } }
