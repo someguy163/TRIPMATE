@@ -1,6 +1,7 @@
--- C:\xampp\mysql\bin\mysql.exe -u root < tripmate.sql
-CREATE DATABASE IF NOT EXISTS tripmate CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE tripmate;
+-- 먼저 DB 를 만들고, 그 DB 를 선택한 상태에서 이 파일을 실행한다. (DB 를 만드는 줄은 호스팅에서 막혀 있어 넣지 않았다)
+--   로컬(XAMPP)   : mysql -u root -e "CREATE DATABASE IF NOT EXISTS tripmate CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+--                   mysql -u root tripmate < tripmate.sql
+--   호스팅        : 컨트롤 패널에서 MySQL DB 를 만들고, phpMyAdmin 에서 그 DB 를 연 뒤 "가져오기"로 이 파일을 올린다
 
 CREATE TABLE IF NOT EXISTS users (
   id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,

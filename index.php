@@ -1,4 +1,5 @@
 <?php
+date_default_timezone_set('Asia/Seoul'); // the host's own timezone could be anywhere
 /**
  * CodeIgniter
  *
@@ -53,7 +54,9 @@
  *
  * NOTE: If you change these, also change the error_reporting() code below
  */
-	define('ENVIRONMENT', isset($_SERVER['CI_ENV']) ? $_SERVER['CI_ENV'] : 'development');
+	// errors are shown only when running on this computer; any other host (the deployed site) runs in production mode
+	$local = in_array(isset($_SERVER['SERVER_NAME']) ? $_SERVER['SERVER_NAME'] : 'localhost', ['localhost', '127.0.0.1', '::1'], true);
+	define('ENVIRONMENT', isset($_SERVER['CI_ENV']) ? $_SERVER['CI_ENV'] : ($local ? 'development' : 'production'));
 
 /*
  *---------------------------------------------------------------

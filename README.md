@@ -24,11 +24,14 @@ PHP 8.x · [CodeIgniter 3.1](https://codeigniter.com) · MySQL / MariaDB · Kaka
 
 1. 이 저장소를 `C:\xampp\htdocs\TRIPMATE` 에 내려받습니다.
 2. XAMPP 에서 **Apache** 와 **MySQL** 을 시작합니다.
-3. DB 를 만듭니다.
+3. DB 를 만들고 구조를 가져옵니다.
    ```bash
-   mysql -u root < tripmate.sql
+   mysql -u root -e "CREATE DATABASE IF NOT EXISTS tripmate CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
    ```
-   (phpMyAdmin 에서 `tripmate.sql` 을 가져와도 됩니다.)
+   ```bash
+   mysql -u root tripmate < tripmate.sql
+   ```
+   (phpMyAdmin 에서는 `tripmate` DB 를 만들고, 그 DB 를 연 뒤 **가져오기**로 `tripmate.sql` 을 올립니다.)
 4. 설정 파일을 만듭니다. 양식 파일을 복사해서 이름을 바꾸고 값을 채웁니다.
    - `application/config/kakao.example.php` → `application/config/kakao.php`
    - `application/config/database.example.php` → `application/config/database.php`
@@ -113,12 +116,19 @@ system/          CodeIgniter 본체
 
 ## 배포할 때
 
-- `application/config/config.php` 의 `base_url` 은 지금 **개발용으로 접속 주소를 따라가고 끝에 `/TRIPMATE/` 가 붙어 있습니다.** 배포하면 실제 주소로 고정하세요.
-- `index.php` 의 `ENVIRONMENT` 를 `production` 으로 바꿉니다.
-- 카카오 콘솔에 배포 주소를 추가합니다 (로그인 리다이렉트 URI, JavaScript SDK 도메인).
-- `kakao.php` / `database.php` 는 서버에서 직접 만듭니다.
-- `tripmate.sql` 로 DB 를 만든 뒤, 이 파일과 `deploy/` 폴더는 웹 서버에 두지 않습니다.
-- 호스팅 후보는 `deploy/hostcheck.php` 를 올려 **서버에서 카카오로 연결되는지** 먼저 확인하세요.
+사이트 주소 설정은 따로 고칠 필요가 없습니다. 접속한 주소를 따라가고, 폴더 이름(`/TRIPMATE/`)도 자동으로 맞춥니다. 이 컴퓨터(localhost)에서는 오류를 그대로 보여 주는 **개발 모드**, 그 밖의 주소(배포 서버)에서는 오류를 숨기는 **운영 모드**로 자동 전환됩니다. 서버 시간대와 상관없이 날짜는 한국 시간(`Asia/Seoul`)으로 계산합니다.
+
+1. **호스팅 점검**: 후보 호스팅에 `deploy/hostcheck.php` 하나만 올려서 열어 봅니다. **서버에서 카카오로 연결**되는 줄이 모두 ✔ 이어야 합니다. 점검이 끝나면 지웁니다.
+2. **DB**: 호스팅 컨트롤 패널에서 MySQL DB 를 만들고, phpMyAdmin 에서 그 DB 를 연 뒤 `tripmate.sql` 을 **가져오기**합니다. (DB 이름, 사용자, 비밀번호, 호스트를 메모해 둡니다)
+3. **파일 올리기**: `index.php`, `.htaccess`, `application/`, `assets/`, `system/` 을 웹 폴더(`htdocs`)에 올립니다. `tripmate.sql`, `deploy/`, `.git` 은 올리지 않습니다.
+4. **설정 파일 만들기** (서버에서 직접, 양식 파일 이름을 바꾸고 값을 채웁니다)
+   - `application/config/database.example.php` → `database.php` : 2번에서 메모한 DB 정보
+   - `application/config/kakao.example.php` → `kakao.php` : 카카오 키들과 관리자 번호
+   - (선택, 권장) `application/config/site.example.php` → `site.php` : 실제 사이트 주소를 고정
+5. **카카오 콘솔에 배포 주소 추가**: 로그인 리다이렉트 URI `https://내주소/auth/callback`, JavaScript SDK 도메인 `https://내주소`
+6. 접속해서 로그인까지 확인합니다.
+
+> 키와 비밀번호가 들어간 `kakao.php`, `database.php`, `site.php` 는 `.gitignore` 로 제외되어 있습니다. 저장소에 올리지 마세요.
 
 ## 라이선스
 

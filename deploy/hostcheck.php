@@ -25,9 +25,20 @@ if (function_exists('curl_init')) {
 		$ch = curl_init($url);
 		curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 8, CURLOPT_USERAGENT => 'TripMate-hostcheck', CURLOPT_POST => $post]);
 		if ($post) curl_setopt($ch, CURLOPT_POSTFIELDS, '');
-		$body = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); $err = curl_error($ch); curl_close($ch);
+		$body = curl_exec($ch); $code = curl_getinfo($ch, CURLINFO_HTTP_CODE); $errno = curl_errno($ch); $err = curl_error($ch);
 		$ok = $body !== false && json_decode($body, true) !== null;
-		$add("서버에서 $label 로 연결", $ok, $ok ? "응답 $code (JSON)" : ($err ?: "응답 $code, JSON 이 아님 → 막혔을 가능성: " . substr(strip_tags((string) $body), 0, 60)));
+		$note = $ok ? "응답 $code (JSON)" : ($err ?: "응답 $code, JSON 이 아님 → 막혔을 가능성: " . substr(strip_tags((string) $body), 0, 60));
+		// SSL error (60 = no CA list, 77 = unreadable CA file): try once without checking the certificate, to tell
+		// "blocked" from "reachable but this server has no CA list" (the second one is fixable: ship a CA bundle)
+		if (!$ok && in_array($errno, [60, 77], true)) {
+			curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false); curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
+			$body2 = curl_exec($ch);
+			if ($body2 !== false && json_decode($body2, true) !== null) {
+				$note = "연결은 되지만 이 서버에 인증서 목록이 없어요(cURL 오류 $errno). 해결 가능: cacert.pem 을 application/third_party/ 에 두면 돼요";
+			}
+		}
+		curl_close($ch);
+		$add("서버에서 $label 로 연결", $ok, $note);
 	}
 }
 

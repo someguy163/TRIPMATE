@@ -34,3 +34,6 @@ user_guide_src/cilexer/pycilexer.egg-info/*
 # TripMate: 비밀 키/DB 비밀번호가 들어가는 설정 파일은 저장소에 올리지 않는다
 application/config/kakao.php
 application/config/database.php
+
+application/config/site.php
+deploy/*.zip

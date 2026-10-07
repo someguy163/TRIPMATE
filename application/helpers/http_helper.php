@@ -5,7 +5,10 @@ defined('BASEPATH') OR exit('No direct script access allowed');
 function http_json($url, $post = null, $headers = [])
 {
 	$ch = curl_init($url);
-	curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 10, CURLOPT_HTTPHEADER => $headers]);
+	curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 10, CURLOPT_HTTPHEADER => $headers, CURLOPT_USERAGENT => 'TripMate']);
+	// some shared hosts ship no CA list (cURL error 60); a cacert.pem placed here is used, certificates stay verified
+	$ca = APPPATH . 'third_party/cacert.pem';
+	if (is_file($ca)) curl_setopt($ch, CURLOPT_CAINFO, $ca);
 	if ($post)
 	{
 		curl_setopt($ch, CURLOPT_POST, true);
