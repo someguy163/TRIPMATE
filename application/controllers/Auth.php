@@ -120,9 +120,13 @@ class Auth extends CI_Controller {
 			->order_by('p.day')->order_by('p.at_time')->get()->result();
 		$wanted = array_map(function ($pl) use ($trip) { return talkcal_event($pl, $trip); }, $plans);
 		if (!$wanted) $fail('카카오톡 캘린더에 넣을 일정이 없어요.');
-		$more = function ($res) { return isset($res['msg']) ? " ({$res['code']}) {$res['msg']}" : ' (카카오에서 응답이 없어요)'; };
 		// the console hint only helps when Kakao is complaining about consent / permission, not about the data
 		$hint = function ($why) { return preg_match('/scope|permission|consent|authoriz|동의|권한/i', $why) ? ' 카카오 개발자 콘솔의 톡캘린더 동의항목과 사용 권한(앱 멤버만 가능)을 확인해 주세요.' : ''; };
+		$api  = function ($method, $path, $params = null) use ($auth) {
+			$url = 'https://kapi.kakao.com' . $path;
+			if ($method === 'POST') return http_json($url, $params, $auth);
+			return http_json($url . ($params ? '?' . http_build_query($params) : ''), null, $auth, $method === 'GET' ? null : $method);
+		};
 
 		// what the calendar already holds around these plans (the list API gives at most 31 days at a time).
 		// ponytail: one page of 1000 events per window; has_next is not followed
@@ -131,36 +135,30 @@ class Auth extends CI_Controller {
 		$existing = [];
 		for ($from = $first; $from < $last; $from += 30 * 86400)
 		{
-			$res = http_json('https://kapi.kakao.com/v2/api/calendar/events?' . http_build_query([
+			$res = $api('GET', '/v2/api/calendar/events', [
 				'calendar_id' => 'primary', 'from' => gmdate('Y-m-d\TH:i:s\Z', $from), 'to' => gmdate('Y-m-d\TH:i:s\Z', min($from + 30 * 86400, $last)), 'limit' => 1000,
-			]), null, $auth);
+			]);
 			if (!isset($res['events']))
 			{
-				$why = $more($res);
+				$why = talkcal_why($res);
 				$fail('카카오톡 캘린더의 일정을 불러오지 못했어요.' . $why . $hint($why));
 			}
 			$existing = array_merge($existing, $res['events']);
 		}
-		$todo = talkcal_sync($wanted, $existing);
 
-		$made = $gone = 0; $why = '';
-		foreach ($todo['create'] as $event)
-		{
-			$res = http_json('https://kapi.kakao.com/v2/api/calendar/create/event', ['event' => json_encode($event, JSON_UNESCAPED_UNICODE)], $auth);
-			if (isset($res['event_id'])) { $made++; continue; }
-			$why = $more($res);
-			break; // the same reason would stop the rest too
-		}
-		if (!$why) foreach ($todo['delete'] as $id) // extra copies of a plan that is already in the calendar
-		{
-			$res = http_json('https://kapi.kakao.com/v2/api/calendar/delete/event?' . http_build_query(['event_id' => $id]), null, $auth, 'DELETE');
-			if (isset($res['event_id'])) { $gone++; continue; }
-			$why = $more($res);
-			break;
-		}
-		$summary = "새로 {$made}개 넣고, 이미 있는 {$todo['kept']}개는 그대로 두고, 중복 {$gone}개는 지웠어요.";
-		if ($why && !$made && !$gone) $fail('카카오톡 캘린더에 넣지 못했어요.' . $why . $hint($why));
-		$this->session->set_flashdata($why ? 'err' : 'ok', '카카오톡 캘린더: ' . $summary . ($why ? ' 일부는 처리하지 못했어요.' . $why : ' 톡캘린더나 위젯에서 확인해 보세요.'));
+		// the old ones: what this app put into this person's calendar for this trip earlier (remembered in talkcal_events), plus anything
+		// that looks exactly like one of these plans (from before the app remembered); then the new ones, remembered for next time
+		@set_time_limit(120); // up to 50 plans: one request to remove the old event and one to make the new one
+		$trip_id = (int) $job['trip'];
+		$r = talkcal_replace(
+			$api, $wanted, $existing,
+			array_column($this->db->select('event_id')->get_where('talkcal_events', ['user_id' => $uid, 'trip_id' => $trip_id])->result_array(), 'event_id'),
+			function ($id) use ($uid, $trip_id) { $this->db->query('INSERT IGNORE INTO talkcal_events (user_id, trip_id, event_id) VALUES (?, ?, ?)', [$uid, $trip_id, $id]); },
+			function ($id) use ($uid) { $this->db->delete('talkcal_events', ['user_id' => $uid, 'event_id' => $id]); }
+		);
+		$summary = "이전에 넣은 일정 {$r['gone']}개를 지우고, 새로 {$r['made']}개를 넣었어요.";
+		if ($r['why'] && !$r['made'] && !$r['gone']) $fail('카카오톡 캘린더에 넣지 못했어요.' . $r['why'] . $hint($r['why']));
+		$this->session->set_flashdata($r['why'] ? 'err' : 'ok', '카카오톡 캘린더: ' . $summary . ($r['why'] ? ' 일부는 처리하지 못했어요.' . $r['why'] : ' 톡캘린더나 위젯에서 확인해 보세요.'));
 		redirect($back);
 	}
 

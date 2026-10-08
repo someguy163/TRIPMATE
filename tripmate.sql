@@ -115,3 +115,13 @@ CREATE TABLE IF NOT EXISTS expense_shares (
   FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE CASCADE,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 톡캘린더에 넣은 일정의 id (다음에 넣을 때 이전 일정을 지우고 새로 넣기 위해 기억해 둔다)
+CREATE TABLE IF NOT EXISTS talkcal_events (
+  user_id  INT UNSIGNED NOT NULL,
+  trip_id  INT UNSIGNED NOT NULL,
+  event_id VARCHAR(64) NOT NULL,
+  PRIMARY KEY (user_id, event_id),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -32,28 +32,53 @@ function talkcal_key($title, $start, $end)
 	return $title . '|' . strtotime($start) . '|' . strtotime($end);
 }
 
-// The plans against what the calendar already holds: which events to create, and which extra copies to delete.
-// $wanted = events from talkcal_event(); $existing = the "events" list of Kakao's list API.
-// Only an existing event with the same title and times as a plan counts, so nothing else in the calendar is touched.
-// Two plans with the same title and times need two events; a third copy is an extra.
-function talkcal_sync(array $wanted, array $existing)
+// The ids of events already in the calendar that look exactly like one of these plans (same title, start and end).
+// $wanted = events from talkcal_event(); $existing = the "events" list of Kakao's list API. Nothing else is matched.
+function talkcal_old(array $wanted, array $existing)
 {
-	$need = $have = [];
-	foreach ($wanted as $e) $need[talkcal_key($e['title'], $e['time']['start_at'], $e['time']['end_at'])][] = $e;
+	$keys = [];
+	foreach ($wanted as $e) $keys[talkcal_key($e['title'], $e['time']['start_at'], $e['time']['end_at'])] = true;
+	$ids = [];
 	foreach ($existing as $x)
 	{
 		if (isset($x['type']) && $x['type'] !== 'USER') continue; // public and subscribed calendars are not ours
 		if (empty($x['id']) || !isset($x['title']) || empty($x['time']['start_at']) || empty($x['time']['end_at'])) continue;
-		$k = talkcal_key($x['title'], $x['time']['start_at'], $x['time']['end_at']);
-		if (isset($need[$k])) $have[$k][$x['id']] = $x['id']; // keyed by id: windows of the list can return an event twice
+		if (isset($keys[talkcal_key($x['title'], $x['time']['start_at'], $x['time']['end_at'])])) $ids[$x['id']] = $x['id']; // by id: list windows can return one event twice
 	}
-	$create = $delete = []; $kept = 0;
-	foreach ($need as $k => $list)
+	return array_values($ids);
+}
+
+// Kakao's complaint as text: " (code) message"
+function talkcal_why($res)
+{
+	return isset($res['msg']) ? " ({$res['code']}) {$res['msg']}" : ' (카카오에서 응답이 없어요)';
+}
+
+// Replace what this app put into a KakaoTalk calendar earlier with the current plans: remove the old events, make the new ones.
+// $api($method, $path, $params) calls Kakao and returns the decoded JSON. $remembered = event ids stored after earlier runs;
+// $remember($id) / $forget($id) keep that list. Returns ['gone' => removed, 'made' => created, 'why' => Kakao's complaint if it stopped early].
+// The old events go first and a failure to remove one stops everything (new ones on top of old ones would double the plans).
+function talkcal_replace(callable $api, array $wanted, array $existing, array $remembered, callable $remember, callable $forget)
+{
+	$old  = array_values(array_unique(array_merge($remembered, talkcal_old($wanted, $existing))));
+	$gone = $made = 0; $why = '';
+	foreach ($old as $id)
 	{
-		$h = isset($have[$k]) ? array_values($have[$k]) : [];
-		$kept += min(count($h), count($list));
-		foreach (array_slice($list, count($h)) as $e) $create[] = $e;
-		foreach (array_slice($h, count($list)) as $id) $delete[] = $id;
+		$res = $api('DELETE', '/v2/api/calendar/delete/event', ['event_id' => $id]);
+		if (isset($res['event_id'])) $gone++;
+		elseif (isset($api('GET', '/v2/api/calendar/event', ['event_id' => $id])['id']))
+		{
+			$why = talkcal_why($res); // it is still there and could not be removed
+			break;
+		}
+		$forget($id); // removed, or already gone (the person deleted it)
 	}
-	return ['create' => $create, 'delete' => $delete, 'kept' => $kept];
+	if (!$why) foreach ($wanted as $event)
+	{
+		$res = $api('POST', '/v2/api/calendar/create/event', ['event' => json_encode($event, JSON_UNESCAPED_UNICODE)]);
+		if (isset($res['event_id'])) { $made++; $remember($res['event_id']); continue; }
+		$why = talkcal_why($res);
+		break; // the same reason would stop the rest too
+	}
+	return ['gone' => $gone, 'made' => $made, 'why' => $why];
 }
