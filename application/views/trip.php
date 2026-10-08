@@ -73,7 +73,12 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 			</li>
 		<?php endforeach ?>
 	</ul>
-	<?php if ($can_edit_trip && $n > 1): ?><p class="muted dlg-note">내보낸 친구도 초대 링크로 다시 들어올 수 있어요.</p><?php endif ?>
+	<?php if ($can_edit_trip): // a fresh link: the old one stops working, so a removed friend can't come back with it ?>
+		<p class="muted dlg-note">내보낸 친구가 다시 들어오지 못하게 하거나 링크가 퍼졌다면, 새로 만들어요. 이전에 보낸 링크는 못 쓰게 돼요.</p>
+		<?= form_open("trip/$trip->id/newlink", ['class' => 'dlg-foot', 'onsubmit' => "return confirm('이전에 보낸 초대 링크는 더 이상 쓸 수 없게 돼요. 새 링크를 만들까요?')"]) ?>
+			<button class="btn btn-soft">🔗 초대 링크 새로 만들기</button>
+		</form>
+	<?php endif ?>
 </dialog>
 
 <?php if ($can_edit_trip): ?>
@@ -194,6 +199,12 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 			</div>
 		<?php endif ?>
 		<div id="wx" class="wx" hidden></div>
+		<?php if ($plans): ?>
+			<p class="ics">
+				<a class="btn btn-soft" id="icsLink" href="<?= site_url("trip/$trip->id/calendar") ?>" download="tripmate-<?= (int) $trip->id ?>.ics">📅 캘린더에 넣기</a>
+				<span class="muted">고른 여행지의 일정을 내 캘린더로 받아요. 30분 전에 알려 줘요.</span>
+			</p>
+		<?php endif ?>
 		<?php if ($mapped && $js_key): ?>
 			<div class="mapbox">
 				<div id="maploading" class="maploading" role="status"><span class="spin"></span>지도를 불러오는 중…</div>
@@ -331,31 +342,43 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 	<section id="expenses">
 		<h2>정산</h2>
 		<?php $total = array_sum(array_column($expenses, 'amount')); ?>
-		<p class="muted lead-in">돈을 낸 사람이 적으면, 모인 금액을 모두 똑같이 나눠서 계산해요.</p>
+		<p class="muted lead-in">돈을 낸 사람이 적고, 함께한 사람을 고르면 그 사람들끼리 똑같이 나눠서 계산해요.</p>
 		<?= form_open("trip/$trip->id/expense", ['class' => 'exp-form']) ?>
 			<input type="text" name="title" placeholder="어디에 썼나요? (예: 점심 식사)" maxlength="100" aria-label="쓴 내용" required>
 			<input type="text" name="amount" inputmode="numeric" placeholder="낸 금액 (원)" aria-label="낸 금액" required>
+			<fieldset class="who-pick">
+				<legend>함께한 사람 (이 금액을 나눠 내요)</legend>
+				<?php foreach ($members as $m): ?><label class="pick"><input type="checkbox" name="who[]" value="<?= (int) $m->id ?>" checked><?= html_escape($m->nickname) ?></label><?php endforeach ?>
+			</fieldset>
 			<button class="btn btn-primary">내가 냈어요</button>
 		</form>
-		<?php if ($expenses): ?>
+		<?php if ($expenses):
+			$mine = ['share' => 0]; foreach ($settle['rows'] as $r) if ($r['id'] == $me) $mine = $r; ?>
 			<div class="sum">
 				<div><small>총 지출</small><b><?= number_format($total) ?>원</b></div>
-				<div><small>한 명당</small><b><?= number_format(round($total / max(1, $n))) ?>원</b></div>
+				<div><small>내가 부담할 금액</small><b><?= number_format($mine['share']) ?>원</b></div>
 			</div>
 			<h3>이렇게 보내면 끝이에요</h3>
-			<?php if ($settle): ?>
+			<?php if ($settle['transfers']): ?>
 				<ul class="settle">
-					<?php foreach ($settle as $s): ?>
+					<?php foreach ($settle['transfers'] as $s): ?>
 						<li<?= $s['from'] == $me || $s['to'] == $me ? ' class="me"' : '' ?>><b><?= html_escape($s['from_name']) ?></b> → <b><?= html_escape($s['to_name']) ?></b><span><?= number_format($s['amount']) ?>원</span></li>
 					<?php endforeach ?>
 				</ul>
-			<?php else: ?><p class="empty">보낼 돈이 없어요. 모두 똑같이 냈어요 👍</p><?php endif ?>
+			<?php else: ?><p class="empty">보낼 돈이 없어요. 모두 낸 만큼 부담했어요 👍</p><?php endif ?>
+			<h3>사람별</h3>
+			<ul class="rows">
+				<?php foreach ($settle['rows'] as $r): ?>
+					<li><span class="what"><?= html_escape($r['name']) ?></span><small class="muted">낸 돈 <?= number_format($r['paid']) ?>원 · 부담 <?= number_format($r['share']) ?>원</small></li>
+				<?php endforeach ?>
+			</ul>
 			<h3>쓴 내역</h3>
 			<ul class="rows">
 				<?php foreach ($expenses as $e): ?>
+					<?php $sh = isset($shares[$e->id]) ? $shares[$e->id] : null; // who shares this cost (none stored: everyone) ?>
 					<li>
 						<span class="who"><?= avatar($e->payer, $e->payer_img) ?></span>
-						<span class="what"><?= html_escape($e->title) ?><small class="where"><?= html_escape($e->payer) ?></small></span>
+						<span class="what"><?= html_escape($e->title) ?><small class="where"><?= html_escape($e->payer) ?> 결제 · 함께 <?= !$sh || count($sh) >= $n ? '전원' : html_escape(implode(', ', $sh)) ?></small></span>
 						<b class="money"><?= number_format($e->amount) ?>원</b>
 						<?php if ($owner || !empty($is_admin) || $e->paid_by == $me): ?>
 							<?= form_open("expense/$e->id/delete") ?><button class="x" aria-label="내역 삭제">✕</button></form>
@@ -624,6 +647,7 @@ if (tripEdit) {
 // pick a destination: the plan list and the map show only its plans
 const chips = [...document.querySelectorAll('.dest')], destEmpty = document.getElementById('destEmpty');
 const ids = chips.map(c => c.dataset.dest).filter(d => d !== 'all');
+const icsLink = document.getElementById('icsLink'), icsBase = icsLink && icsLink.getAttribute('href');
 const destView = document.getElementById('destView'), destHint = document.getElementById('destHint');
 // the plan's destination is never typed in: it follows the chip being viewed (or the candidate "일정에 넣기" came from).
 // The visible box is disabled, so the hidden field carries the value; with no destination there is nothing to save yet.
@@ -643,6 +667,7 @@ function applyDest(v) {
 	}
 	syncDestSelect();
 	showWeather();
+	if (icsLink) icsLink.href = icsBase + '?dest=' + curDest; // the calendar file follows the destination in view ('all' = everything)
 	renderPins();
 }
 

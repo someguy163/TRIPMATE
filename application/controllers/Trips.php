@@ -14,7 +14,7 @@ class Trips extends CI_Controller {
 		$this->admin = $this->uid && $this->db->get_where('users', ['id' => $this->uid, 'is_admin' => 1])->num_rows() > 0;
 		$this->load->vars('is_admin', $this->admin);
 		// everything except these pages changes data, so POST only (CSRF token is checked by CI)
-		if (!in_array($this->router->fetch_method(), ['index', 'show', 'join', 'search']) && $this->input->method() !== 'post')
+		if (!in_array($this->router->fetch_method(), ['index', 'show', 'join', 'search', 'calendar']) && $this->input->method() !== 'post')
 		{
 			show_404();
 		}
@@ -98,12 +98,15 @@ class Trips extends CI_Controller {
 			->where('i.trip_id', $id)->order_by('i.done')->order_by('i.id')->get()->result();
 		$expenses = $this->db->select('e.*, u.nickname AS payer, u.profile_img AS payer_img')->from('expenses e')->join('users u', 'u.id = e.paid_by')
 			->where('e.trip_id', $id)->order_by('e.id', 'desc')->get()->result();
-		$settle = $this->_settle($members, $expenses);
+		$shares = []; // expense id => [user id => nickname] of the people who share its cost
+		foreach ($this->db->select('s.expense_id, s.user_id, u.nickname')->from('expense_shares s')->join('expenses e', 'e.id = s.expense_id')
+			->join('users u', 'u.id = s.user_id')->where('e.trip_id', $id)->get()->result() as $r) $shares[$r->expense_id][$r->user_id] = $r->nickname;
+		$settle = $this->_settle($members, $expenses, $shares);
 		$me = $this->uid;
 		$view_only = !in_array($this->uid, array_column($members, 'id')); // only possible for an admin
 		$this->config->load('kakao');
 		$js_key = (string) config_item('kakao_js_key');
-		$this->load->view('trip', compact('trip', 'members', 'places', 'plans', 'comments', 'items', 'expenses', 'settle', 'me', 'view_only', 'js_key'));
+		$this->load->view('trip', compact('trip', 'members', 'places', 'plans', 'comments', 'items', 'expenses', 'shares', 'settle', 'me', 'view_only', 'js_key'));
 	}
 
 	public function join($code)
@@ -235,6 +238,69 @@ class Trips extends CI_Controller {
 		redirect("trip/$trip_id");
 	}
 
+	// the old invite link stops working: the owner (or an admin) gets a fresh one
+	public function new_invite($trip_id)
+	{
+		$this->_manage($trip_id);
+		$this->db->update('trips', ['invite_code' => bin2hex(random_bytes(6))], ['id' => $trip_id]);
+		$this->session->set_flashdata('ok', '초대 링크를 새로 만들었어요. 이전에 보낸 링크는 더 이상 쓸 수 없어요.');
+		redirect("trip/$trip_id");
+	}
+
+	// the plans as a .ics file for the phone's / PC's calendar (each with a reminder 30 minutes before).
+	// Which plans: ?dest=ID that destination, ?dest=all everything, nothing given: the confirmed destination (else everything).
+	public function calendar($trip_id)
+	{
+		$this->_member($trip_id, TRUE);
+		$trip = $this->db->get_where('trips', ['id' => $trip_id])->row();
+		$want = $this->input->get('dest');
+		$dest = $want === 'all' ? 0 : ((int) $want ?: (int) $trip->chosen_place_id);
+		$this->db->select('p.*, u.nickname AS author, d.name AS dest_name')->from('plans p')->join('users u', 'u.id = p.added_by')
+			->join('places d', 'd.id = p.dest_id', 'left')->where('p.trip_id', $trip_id);
+		if ($dest) $this->db->where('p.dest_id', $dest);
+		$plans = $this->db->order_by('p.day')->order_by('p.at_time')->order_by('p.id')->get()->result();
+
+		$seoul = new DateTimeZone('Asia/Seoul'); $utc = new DateTimeZone('UTC'); // times are saved as Korean time; calendars get absolute (UTC) times
+		$esc  = function ($t) { return str_replace(['\\', ';', ',', "\r\n", "\n", "\r"], ['\\\\', '\\;', '\\,', '\\n', '\\n', '\\n'], (string) $t); };
+		$when = function ($day, $time) use ($seoul, $utc) { return (new DateTime("$day $time", $seoul))->setTimezone($utc)->format('Ymd\\THis\\Z'); };
+		$host = (string) parse_url(base_url(), PHP_URL_HOST);
+		$out  = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//TripMate//KO', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH', 'X-WR-CALNAME:' . $esc($trip->title)];
+		foreach ($plans as $pl)
+		{
+			$out = array_merge($out, ['BEGIN:VEVENT', "UID:plan-$pl->id@$host", 'DTSTAMP:' . gmdate('Ymd\\THis\\Z')]);
+			if ($pl->at_time)
+			{
+				$end = $pl->end_time ?: date('H:i:s', strtotime($pl->at_time) + 3600); // no end time: one hour
+				array_push($out, 'DTSTART:' . $when($pl->day, $pl->at_time), 'DTEND:' . $when($pl->day, $end));
+			}
+			else // older plans without a time: an all-day event
+			{
+				array_push($out, 'DTSTART;VALUE=DATE:' . date('Ymd', strtotime($pl->day)), 'DTEND;VALUE=DATE:' . date('Ymd', strtotime($pl->day . ' +1 day')));
+			}
+			$out[] = 'SUMMARY:' . $esc($pl->title);
+			if ($pl->place) $out[] = 'LOCATION:' . $esc($pl->place);
+			if ($pl->lat !== null && $pl->lng !== null) $out[] = 'GEO:' . (float) $pl->lat . ';' . (float) $pl->lng;
+			$out[] = 'DESCRIPTION:' . $esc(($pl->dest_name ? $pl->dest_name . ' · ' : '') . $trip->title . ' (작성 ' . $pl->author . ')');
+			array_push($out, 'BEGIN:VALARM', 'TRIGGER:-PT30M', 'ACTION:DISPLAY', 'DESCRIPTION:' . $esc($pl->title), 'END:VALARM', 'END:VEVENT');
+		}
+		$out[] = 'END:VCALENDAR';
+
+		$fold = function ($line) { // lines are at most 75 bytes; a longer one continues on the next line after a space
+			$s = '';
+			while (strlen($line) > 74)
+			{
+				$cut = 74;
+				while ($cut > 0 && (ord($line[$cut]) & 0xC0) === 0x80) $cut--; // never cut inside a Korean character
+				$s .= substr($line, 0, $cut) . "\r\n ";
+				$line = substr($line, $cut);
+			}
+			return $s . $line;
+		};
+		$this->output->set_content_type('text/calendar')
+			->set_header('Content-Disposition: attachment; filename="tripmate-' . (int) $trip_id . '.ics"')
+			->set_output(implode("\r\n", array_map($fold, $out)) . "\r\n");
+	}
+
 	// notes on plans: any member can write one; the writer, the owner or an admin can remove it
 	public function add_comment($plan_id)
 	{
@@ -304,7 +370,13 @@ class Trips extends CI_Controller {
 		$amount = preg_replace('/\D/', '', (string) $this->input->post('amount')); // "12,000" works too
 		$back   = "trip/$trip_id#expenses";
 		if ($title === '' || $amount === '' || (int) $amount < 1 || strlen($amount) > 9) $this->_fail('쓴 내용과 금액(1원 이상)을 입력해 주세요.', $back);
+		// the people who share this cost: only members of this trip count
+		$who = array_map('intval', (array) $this->input->post('who'));
+		$members = $who ? $this->db->select('user_id')->where('trip_id', $trip_id)->where_in('user_id', $who)->get('trip_members')->result() : [];
+		if (!$members) $this->_fail('함께한 사람을 한 명 이상 골라 주세요.', $back);
 		$this->db->insert('expenses', ['trip_id' => $trip_id, 'paid_by' => $this->uid, 'title' => $title, 'amount' => (int) $amount]);
+		$eid = $this->db->insert_id();
+		$this->db->insert_batch('expense_shares', array_map(function ($m) use ($eid) { return ['expense_id' => $eid, 'user_id' => $m->user_id]; }, $members));
 		redirect($back);
 	}
 
@@ -534,31 +606,35 @@ class Trips extends CI_Controller {
 	{
 		$this->db->query('DELETE v FROM votes v JOIN places p ON p.id = v.place_id WHERE p.trip_id = ? AND v.user_id = ?', [$trip_id, $user_id]);
 		$this->db->update('items', ['taker_id' => null], ['trip_id' => $trip_id, 'taker_id' => $user_id]);
+		$this->db->query('DELETE s FROM expense_shares s JOIN expenses e ON e.id = s.expense_id WHERE e.trip_id = ? AND s.user_id = ?', [$trip_id, $user_id]);
 		$this->db->delete('trip_members', ['trip_id' => $trip_id, 'user_id' => $user_id]);
 	}
 
-	// who sends how much to whom so that everyone has paid the same share. Everyone in the group now splits every
-	// expense equally; someone who left but paid something is simply paid back.
-	// ponytail: no per-expense participants; add a "who shared this" list per expense if that is ever needed
-	private function _settle($members, $expenses)
+	// what each person paid and has to bear, and who sends how much to whom to even it out.
+	// Each expense is split equally between the people ticked for it (an older one without a list: everyone in the group now).
+	// Someone who left and paid something is simply paid back.
+	// ponytail: whole won, rounded per person; a few won of rounding can be left over
+	private function _settle($members, $expenses, $shares)
 	{
-		$total = array_sum(array_column($expenses, 'amount'));
-		if (!$total || !$members) return [];
-		$names = $bal = [];
-		foreach ($members as $m) { $names[$m->id] = $m->nickname; $bal[$m->id] = -$total / count($members); }
+		$names = $paid = $share = $all = [];
+		foreach ($members as $m) { $names[$m->id] = $m->nickname; $all[] = $m->id; }
 		foreach ($expenses as $e)
 		{
-			$names[$e->paid_by] = $names[$e->paid_by] ?? $e->payer;
-			$bal[$e->paid_by] = ($bal[$e->paid_by] ?? 0) + $e->amount;
+			$names[$e->paid_by] = isset($names[$e->paid_by]) ? $names[$e->paid_by] : $e->payer;
+			$who = isset($shares[$e->id]) ? array_keys($shares[$e->id]) : $all;
+			foreach ($who as $u) $share[$u] = (isset($share[$u]) ? $share[$u] : 0) + $e->amount / count($who);
+			$paid[$e->paid_by] = (isset($paid[$e->paid_by]) ? $paid[$e->paid_by] : 0) + $e->amount;
 		}
-		$pay = $get = [];
-		foreach ($bal as $id => $v)
+		$rows = $pay = $get = [];
+		foreach ($names as $id => $name)
 		{
-			$v = (int) round($v);
-			if ($v < 0) $pay[$id] = -$v; elseif ($v > 0) $get[$id] = $v;
+			$p = isset($paid[$id]) ? (int) $paid[$id] : 0;
+			$s = isset($share[$id]) ? (int) round($share[$id]) : 0;
+			$rows[] = ['id' => $id, 'name' => $name, 'paid' => $p, 'share' => $s];
+			if ($p < $s) $pay[$id] = $s - $p; elseif ($p > $s) $get[$id] = $p - $s;
 		}
 		arsort($pay); arsort($get);
-		$out = [];
+		$transfers = [];
 		foreach ($pay as $from => $owe)
 		{
 			foreach ($get as $to => $due) // biggest debtor pays the biggest creditor first
@@ -566,11 +642,11 @@ class Trips extends CI_Controller {
 				if (!$owe) break;
 				if (!$due) continue;
 				$x = min($owe, $due);
-				$out[] = ['from' => $from, 'to' => $to, 'from_name' => $names[$from], 'to_name' => $names[$to], 'amount' => $x];
+				$transfers[] = ['from' => $from, 'to' => $to, 'from_name' => $names[$from], 'to_name' => $names[$to], 'amount' => $x];
 				$owe -= $x; $get[$to] -= $x;
 			}
 		}
-		return $out;
+		return ['rows' => $rows, 'transfers' => $transfers];
 	}
 
 	// members only; $admin_ok lets an admin through for read-only pages

@@ -106,3 +106,12 @@ CREATE TABLE IF NOT EXISTS expenses (
   FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
   FOREIGN KEY (paid_by) REFERENCES users(id)
 ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 경비를 함께 나눠 부담하는 사람들 (이 표에 없는 예전 경비는 지금 모임에 있는 전원이 나눈 것으로 본다)
+CREATE TABLE IF NOT EXISTS expense_shares (
+  expense_id INT UNSIGNED NOT NULL,
+  user_id    INT UNSIGNED NOT NULL,
+  PRIMARY KEY (expense_id, user_id),
+  FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
