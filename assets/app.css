@@ -310,3 +310,8 @@ select:disabled { opacity:1; cursor:not-allowed; border-color:var(--sea); backgr
 /* while a plan's notes are open the row grows: keep the dot, time and buttons at the top instead of the middle */
 .stop:has(.notes[open]) { align-items:flex-start; }
 .stop:has(.notes[open]) .tick { top:12px; margin-top:0; }
+
+/* directions buttons under a placed plan */
+.nav { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
+.mini { display:inline-flex; align-items:center; min-height:28px; padding:0 8px; border:0; border-radius:99px; background:var(--sea-soft); color:var(--sea); font:600 12px var(--font); text-decoration:none; cursor:pointer; }
+.mini:hover { filter:brightness(.97); }

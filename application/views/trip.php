@@ -221,6 +221,13 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 					<div class="body">
 						<span class="what"><?= html_escape($pl->title) ?></span>
 						<?php if ($pl->place): ?><small class="where">📍 <?= html_escape($pl->place) ?></small><?php endif ?>
+						<?php if ($pl->lat !== null && $pl->lng !== null): // a placed plan: directions from where the person is now
+							$nm = trim(str_replace([',', '/', '#', '?'], ' ', (string) ($pl->place ?: $pl->title))) ?: '목적지'; ?>
+							<span class="nav">
+								<a class="mini" href="https://map.kakao.com/link/to/<?= rawurlencode($nm) ?>,<?= (float) $pl->lat ?>,<?= (float) $pl->lng ?>" target="_blank" rel="noopener">🧭 길찾기</a>
+								<button type="button" class="mini" data-navi data-name="<?= html_escape($nm) ?>" data-lat="<?= (float) $pl->lat ?>" data-lng="<?= (float) $pl->lng ?>" title="카카오내비로 길 안내 시작" hidden>🚗 내비</button>
+							</span>
+						<?php endif ?>
 						<?php if (isset($destName[(int) $pl->dest_id])): ?><small class="tag"><?= html_escape($destName[(int) $pl->dest_id]) ?></small><?php endif ?>
 						<small class="who"><?= avatar($pl->author, $pl->author_img) ?>작성 <b><?= html_escape($pl->author) ?></b></small>
 						<?php $cl = isset($comments[$pl->id]) ? $comments[$pl->id] : []; // notes on this plan ?>
@@ -704,6 +711,20 @@ document.querySelectorAll('[data-share]').forEach(b => b.onclick = async () => {
 		});
 	} catch (_) { prompt('카카오톡 공유를 열지 못했어요. 이 링크를 친구에게 직접 보내 주세요', b.dataset.url); }
 	finally { b.classList.remove('busy'); }
+});
+
+// "카카오내비": starts turn-by-turn guidance in the KakaoNavi app. Phones only (the web version was shut down), so the button
+// stays hidden elsewhere; "길찾기" (Kakao Map in a new tab) works everywhere
+const onPhone = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+document.querySelectorAll('[data-navi]').forEach(b => {
+	b.hidden = !(onPhone && KAKAO_KEY);
+	b.onclick = async () => {
+		try {
+			await loadKakao();
+			if (!Kakao.isInitialized()) Kakao.init(KAKAO_KEY);
+			Kakao.Navi.start({ name: b.dataset.name, x: +b.dataset.lng, y: +b.dataset.lat, coordType: 'wgs84' }); // x = longitude, y = latitude
+		} catch (_) { alert('카카오내비를 열지 못했어요. "길찾기"를 눌러 카카오맵으로 확인해 보세요.'); }
+	};
 });
 
 // notes on a plan: leaving or deleting one reloads the page, so the plan's notes are reopened afterwards
