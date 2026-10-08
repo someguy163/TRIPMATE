@@ -45,31 +45,36 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 		<?php if ($trip->start_date): ?>
 			<p class="period"><?= $md($trip->start_date) ?>부터 <?= $md($trip->end_date) ?>까지, <?= $nights ? "{$nights}박 " . ($nights + 1) . '일' : '당일치기' ?></p>
 		<?php endif ?>
-		<p class="muted" style="margin-top:8px">함께하는 친구 <?= $n ?>명</p>
-		<ul class="members">
-			<?php foreach ($members as $m): ?>
-				<li class="chip"><?= avatar($m->nickname, $m->profile_img) ?><?= html_escape($m->nickname) ?><?= $m->id == $trip->owner_id ? '<span class="owner">방장</span>' : '' ?></li>
-			<?php endforeach ?>
-		</ul>
-		<?php if ($can_edit_trip && $n > 1): // hand the group over, or send someone away ?>
-			<details class="manage">
-				<summary>멤버 관리</summary>
-				<ul>
-					<?php foreach ($members as $m): if ($m->id == $trip->owner_id) continue; ?>
-						<li>
-							<span class="who"><?= avatar($m->nickname, $m->profile_img) ?><b><?= html_escape($m->nickname) ?></b></span>
-							<?= form_open("trip/$trip->id/owner/$m->id", ['onsubmit' => 'return confirm(' . html_escape(json_encode($m->nickname . '님에게 방장을 넘길까요?', JSON_UNESCAPED_UNICODE)) . ')']) ?><button class="btn btn-soft">방장 넘기기</button></form>
-							<?= form_open("trip/$trip->id/kick/$m->id", ['onsubmit' => 'return confirm(' . html_escape(json_encode($m->nickname . '님을 내보낼까요? 투표한 내용이 사라지고, 초대 링크로 다시 들어올 수 있어요.', JSON_UNESCAPED_UNICODE)) . ')']) ?><button class="btn btn-quiet">내보내기</button></form>
-						</li>
-					<?php endforeach ?>
-				</ul>
-			</details>
-		<?php endif ?>
+		<button type="button" class="members-btn" id="memberBtn" aria-haspopup="dialog">
+			<span class="stack"><?php foreach (array_slice($members, 0, 5) as $m) echo avatar($m->nickname, $m->profile_img) ?></span>
+			함께하는 친구 <?= $n ?>명 <span aria-hidden="true">›</span>
+		</button>
 	</div>
 	<?php if ($n > 1 || !$owner): // while the owner is alone, the big invite card below has the buttons ?>
 		<div class="invite-btns"><?php $inviteBtns() ?></div>
 	<?php endif ?>
 </section>
+
+<dialog id="memberDlg" class="dlg" aria-labelledby="memberDlgTitle">
+	<div class="dlg-head">
+		<h2 id="memberDlgTitle">함께하는 친구 <?= $n ?>명</h2>
+		<button type="button" class="x" data-close aria-label="닫기">✕</button>
+	</div>
+	<ul class="mlist">
+		<?php foreach ($members as $m): ?>
+			<li>
+				<span class="mname"><?= avatar($m->nickname, $m->profile_img) ?><b><?= html_escape($m->nickname) ?></b><?= $m->id == $trip->owner_id ? '<span class="owner">방장</span>' : '' ?><?= $m->id == $me ? '<span class="me-tag">나</span>' : '' ?></span>
+				<?php if ($can_edit_trip && $m->id != $trip->owner_id): // the owner or an admin: hand the group over, or send them away ?>
+					<div class="macts">
+					<?= form_open("trip/$trip->id/owner/$m->id", ['onsubmit' => 'return confirm(' . html_escape(json_encode($m->nickname . '님에게 방장을 넘길까요?', JSON_UNESCAPED_UNICODE)) . ')']) ?><button class="btn btn-soft">방장 넘기기</button></form>
+					<?= form_open("trip/$trip->id/kick/$m->id", ['onsubmit' => 'return confirm(' . html_escape(json_encode($m->nickname . '님을 내보낼까요? 투표한 내용이 사라지고, 초대 링크로 다시 들어올 수 있어요.', JSON_UNESCAPED_UNICODE)) . ')']) ?><button class="btn btn-danger sm">내보내기</button></form>
+					</div>
+				<?php endif ?>
+			</li>
+		<?php endforeach ?>
+	</ul>
+	<?php if ($can_edit_trip && $n > 1): ?><p class="muted dlg-note">내보낸 친구도 초대 링크로 다시 들어올 수 있어요.</p><?php endif ?>
+</dialog>
 
 <?php if ($can_edit_trip): ?>
 	<button type="button" class="btn btn-quiet" id="editTripBtn">✎ 모임 이름·기간 수정</button>
@@ -726,6 +731,12 @@ document.querySelectorAll('[data-navi]').forEach(b => {
 		} catch (_) { alert('카카오내비를 열지 못했어요. "길찾기"를 눌러 카카오맵으로 확인해 보세요.'); }
 	};
 });
+
+// the member list is a popup (native <dialog>): the button opens it, ✕, Esc or a click outside closes it
+const memberDlg = document.getElementById('memberDlg');
+document.getElementById('memberBtn').onclick = () => memberDlg.showModal();
+memberDlg.querySelector('[data-close]').onclick = () => memberDlg.close();
+memberDlg.addEventListener('click', e => { if (e.target === memberDlg) memberDlg.close(); });
 
 // notes on a plan: leaving or deleting one reloads the page, so the plan's notes are reopened afterwards
 document.querySelectorAll('.notes').forEach(d => d.addEventListener('submit', () => { try { sessionStorage.setItem('note', d.dataset.planId); } catch (_) {} }));

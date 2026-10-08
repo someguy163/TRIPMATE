@@ -260,13 +260,6 @@ select { font:16px var(--font); min-height:44px; padding:0 12px; width:100%; min
 .deadline.over { background:color-mix(in srgb,var(--citrus) 28%,var(--surface)); color:var(--ink); }
 .vote:disabled { opacity:.6; cursor:not-allowed; }
 
-/* member management (owner / admin) */
-.manage { margin-top:10px; }
-.manage summary { cursor:pointer; color:var(--muted); font-size:14px; padding:4px 0; width:max-content; }
-.manage ul { list-style:none; margin:6px 0 0; padding:0; display:grid; gap:6px; }
-.manage li { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
-.manage .who { flex:1; min-width:8em; }
-
 /* weather strip above the plans */
 .wx { margin:0 0 16px; }
 .wx-row { display:flex; gap:8px; overflow-x:auto; padding:6px 0 8px; }
@@ -315,3 +308,23 @@ select:disabled { opacity:1; cursor:not-allowed; border-color:var(--sea); backgr
 .nav { display:flex; flex-wrap:wrap; gap:4px; margin-top:4px; }
 .mini { display:inline-flex; align-items:center; min-height:28px; padding:0 8px; border:0; border-radius:99px; background:var(--sea-soft); color:var(--sea); font:600 12px var(--font); text-decoration:none; cursor:pointer; }
 .mini:hover { filter:brightness(.97); }
+
+/* members: a button with a few faces, and the full list in a popup */
+.members-btn { display:inline-flex; align-items:center; gap:10px; margin-top:10px; padding:4px 14px 4px 6px; border:1.5px solid var(--line); border-radius:999px; background:var(--surface); color:var(--ink); font:600 14px var(--font); cursor:pointer; }
+.members-btn:hover { border-color:var(--sea); }
+.stack { display:inline-flex; }
+.stack .avatar { width:28px; height:28px; border:2px solid var(--surface); font-size:12px; }
+.stack .avatar + .avatar { margin-left:-8px; }
+dialog.dlg { width:min(92vw,440px); max-height:80vh; padding:18px 20px 20px; border:1.5px solid var(--ink); border-radius:var(--r); background:var(--surface); color:var(--ink); overflow:auto; }
+dialog.dlg::backdrop { background:rgba(10,20,26,.5); }
+.dlg-head { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
+.dlg-head h2 { margin:0; font-size:20px; }
+.mlist { list-style:none; margin:0; padding:0; }
+.mlist li { display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:10px 0; border-bottom:1px solid var(--line); }
+.mlist li:last-child { border-bottom:0; }
+.mname { flex:1; min-width:0; display:flex; align-items:center; gap:8px; }
+.mname .avatar { width:36px; height:36px; border:0; }
+.me-tag { padding:0 8px; border-radius:99px; background:var(--sea-soft); color:var(--sea); font-size:11px; font-weight:700; }
+.btn-danger.sm, .mlist .btn-soft { min-height:32px; padding:0 12px; font-size:13px; }
+.dlg-note { margin-top:10px; }
+.macts { display:flex; gap:8px; margin-left:auto; }
