@@ -57,3 +57,15 @@
 	// for code that submits a form itself (form.submit() does not fire a submit event)
 	window.tmLoading = { start, busy, form(f) { f.dataset.sending = '1'; busy(f.querySelector('button')); start(); } };
 })();
+
+// installable app: a do-nothing service worker (the browsers want one before they offer "install"),
+// and the install button on the home page, shown only when the browser says it can install
+(function () {
+	if ('serviceWorker' in navigator) navigator.serviceWorker.register(new URL('../sw.js', document.currentScript.src)).catch(() => {});
+	let ev;
+	window.addEventListener('beforeinstallprompt', e => {
+		e.preventDefault(); ev = e;
+		const b = document.getElementById('installBtn');
+		if (b) { b.hidden = false; b.onclick = () => { b.hidden = true; ev.prompt(); }; }
+	});
+})();

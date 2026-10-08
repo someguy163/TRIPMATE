@@ -63,6 +63,7 @@ class Trips extends CI_Controller {
 			'title'       => mb_substr($title, 0, 100),
 			'start_date'  => $start,
 			'end_date'    => $end,
+			'vote_deadline' => $this->_date($this->input->post('vote_deadline')), // optional
 			'invite_code' => bin2hex(random_bytes(6)),
 			'owner_id'    => $this->uid,
 		]);
@@ -90,11 +91,19 @@ class Trips extends CI_Controller {
 		$plans = $this->db->select('p.*, u.nickname AS author, u.profile_img AS author_img')->from('plans p')
 			->join('users u', 'u.id = p.added_by')->where('p.trip_id', $id)
 			->order_by('p.day')->order_by('p.at_time IS NULL', '', FALSE)->order_by('p.at_time')->order_by('p.id')->get()->result();
+		$comments = []; // plan id => its notes, oldest first
+		foreach ($this->db->select('c.*, u.nickname, u.profile_img')->from('comments c')->join('plans p', 'p.id = c.plan_id')
+			->join('users u', 'u.id = c.user_id')->where('p.trip_id', $id)->order_by('c.id')->get()->result() as $c) $comments[$c->plan_id][] = $c;
+		$items = $this->db->select('i.*, u.nickname AS taker')->from('items i')->join('users u', 'u.id = i.taker_id', 'left')
+			->where('i.trip_id', $id)->order_by('i.done')->order_by('i.id')->get()->result();
+		$expenses = $this->db->select('e.*, u.nickname AS payer, u.profile_img AS payer_img')->from('expenses e')->join('users u', 'u.id = e.paid_by')
+			->where('e.trip_id', $id)->order_by('e.id', 'desc')->get()->result();
+		$settle = $this->_settle($members, $expenses);
 		$me = $this->uid;
 		$view_only = !in_array($this->uid, array_column($members, 'id')); // only possible for an admin
 		$this->config->load('kakao');
 		$js_key = (string) config_item('kakao_js_key');
-		$this->load->view('trip', compact('trip', 'members', 'places', 'plans', 'me', 'view_only', 'js_key'));
+		$this->load->view('trip', compact('trip', 'members', 'places', 'plans', 'comments', 'items', 'expenses', 'settle', 'me', 'view_only', 'js_key'));
 	}
 
 	public function join($code)
@@ -199,11 +208,113 @@ class Trips extends CI_Controller {
 			if (!$next) $this->_fail('혼자 남은 방장은 나갈 수 없어요. 모임을 삭제해 주세요.', "trip/$trip_id");
 			$this->db->update('trips', ['owner_id' => $next->user_id], ['id' => $trip_id]);
 		}
-		// their votes go with them so the vote bars keep matching the member count
-		$this->db->query('DELETE v FROM votes v JOIN places p ON p.id = v.place_id WHERE p.trip_id = ? AND v.user_id = ?', [$trip_id, $this->uid]);
-		$this->db->delete('trip_members', ['trip_id' => $trip_id, 'user_id' => $this->uid]);
+		$this->_drop_member($trip_id, $this->uid);
 		$this->session->set_flashdata('ok', '모임에서 나갔어요.');
 		redirect('/');
+	}
+
+	// the owner (or an admin) sends a member away; they can come back with the invite link
+	public function kick($trip_id, $user_id)
+	{
+		$trip = $this->_manage($trip_id);
+		if ($user_id == $trip->owner_id) show_error('방장은 내보낼 수 없어요.', 403);
+		$m = $this->_member_row($trip_id, $user_id);
+		$this->_drop_member($trip_id, $user_id);
+		$this->session->set_flashdata('ok', "{$m->nickname}님을 내보냈어요.");
+		redirect("trip/$trip_id");
+	}
+
+	// hand the group over to another member
+	public function transfer($trip_id, $user_id)
+	{
+		$trip = $this->_manage($trip_id);
+		if ($user_id == $trip->owner_id) $this->_fail('이미 방장이에요.', "trip/$trip_id");
+		$m = $this->_member_row($trip_id, $user_id);
+		$this->db->update('trips', ['owner_id' => $user_id], ['id' => $trip_id]);
+		$this->session->set_flashdata('ok', "{$m->nickname}님이 새 방장이에요.");
+		redirect("trip/$trip_id");
+	}
+
+	// notes on plans: any member can write one; the writer, the owner or an admin can remove it
+	public function add_comment($plan_id)
+	{
+		$plan = $this->db->get_where('plans', ['id' => $plan_id])->row();
+		if (!$plan) show_404();
+		$this->_member($plan->trip_id);
+		$body = mb_substr(trim((string) $this->input->post('body')), 0, 300);
+		if ($body !== '')
+		{
+			$this->db->insert('comments', ['plan_id' => $plan_id, 'user_id' => $this->uid, 'body' => $body, 'created_at' => date('Y-m-d H:i:s')]);
+		}
+		redirect("trip/$plan->trip_id#plans");
+	}
+
+	public function del_comment($comment_id)
+	{
+		$c = $this->db->select('c.*, p.trip_id')->from('comments c')->join('plans p', 'p.id = c.plan_id')->where('c.id', $comment_id)->get()->row();
+		if (!$c) show_404();
+		$this->_may_remove($c->trip_id, $c->user_id);
+		$this->db->delete('comments', ['id' => $comment_id]);
+		redirect("trip/$c->trip_id#plans");
+	}
+
+	// packing list: anyone adds, checks off, or takes an item ("I'll bring it"); taking it again gives it back
+	public function add_item($trip_id)
+	{
+		$this->_member($trip_id);
+		$name = mb_substr(trim((string) $this->input->post('name')), 0, 100);
+		if ($name !== '') $this->db->insert('items', ['trip_id' => $trip_id, 'name' => $name, 'added_by' => $this->uid]);
+		redirect("trip/$trip_id#items");
+	}
+
+	public function take_item($item_id)
+	{
+		$item = $this->db->get_where('items', ['id' => $item_id])->row();
+		if (!$item) show_404();
+		$this->_member($item->trip_id);
+		$back = "trip/$item->trip_id#items";
+		if ($item->taker_id && $item->taker_id != $this->uid) $this->_fail('이미 다른 친구가 맡았어요.', $back);
+		$this->db->update('items', ['taker_id' => $item->taker_id ? null : $this->uid], ['id' => $item_id]);
+		redirect($back);
+	}
+
+	public function done_item($item_id)
+	{
+		$item = $this->db->get_where('items', ['id' => $item_id])->row();
+		if (!$item) show_404();
+		$this->_member($item->trip_id);
+		$this->db->set('done', '1 - done', FALSE)->where('id', $item_id)->update('items');
+		redirect("trip/$item->trip_id#items");
+	}
+
+	public function del_item($item_id)
+	{
+		$item = $this->db->get_where('items', ['id' => $item_id])->row();
+		if (!$item) show_404();
+		$this->_may_remove($item->trip_id, $item->added_by);
+		$this->db->delete('items', ['id' => $item_id]);
+		redirect("trip/$item->trip_id#items");
+	}
+
+	// expenses: whoever paid writes it down; the writer, the owner or an admin can remove it
+	public function add_expense($trip_id)
+	{
+		$this->_member($trip_id);
+		$title  = mb_substr(trim((string) $this->input->post('title')), 0, 100);
+		$amount = preg_replace('/\D/', '', (string) $this->input->post('amount')); // "12,000" works too
+		$back   = "trip/$trip_id#expenses";
+		if ($title === '' || $amount === '' || (int) $amount < 1 || strlen($amount) > 9) $this->_fail('쓴 내용과 금액(1원 이상)을 입력해 주세요.', $back);
+		$this->db->insert('expenses', ['trip_id' => $trip_id, 'paid_by' => $this->uid, 'title' => $title, 'amount' => (int) $amount]);
+		redirect($back);
+	}
+
+	public function del_expense($expense_id)
+	{
+		$e = $this->db->get_where('expenses', ['id' => $expense_id])->row();
+		if (!$e) show_404();
+		$this->_may_remove($e->trip_id, $e->paid_by);
+		$this->db->delete('expenses', ['id' => $expense_id]);
+		redirect("trip/$e->trip_id#expenses");
 	}
 
 	public function del_trip($trip_id)
@@ -219,6 +330,8 @@ class Trips extends CI_Controller {
 		$place = $this->db->get_where('places', ['id' => $place_id])->row();
 		if (!$place) show_404();
 		$this->_member($place->trip_id);
+		$deadline = $this->db->get_where('trips', ['id' => $place->trip_id])->row()->vote_deadline;
+		if ($deadline && $deadline < date('Y-m-d')) $this->_fail('투표가 마감됐어요.', "trip/$place->trip_id");
 
 		$key = ['place_id' => $place_id, 'user_id' => $this->uid];
 		$this->db->where($key)->delete('votes');
@@ -256,14 +369,7 @@ class Trips extends CI_Controller {
 	// the group's name and trip dates: the owner or an admin. Plans already made must still fit inside the new dates
 	public function edit_trip($trip_id)
 	{
-		$trip = $this->db->get_where('trips', ['id' => $trip_id])->row();
-		if (!$trip) show_404();
-		$this->_login();
-		if (!$this->admin)
-		{
-			$this->_member($trip_id);
-			if ($trip->owner_id != $this->uid) show_error('방장만 모임 정보를 고칠 수 있어요.', 403);
-		}
+		$this->_manage($trip_id);
 		$title = trim((string) $this->input->post('title'));
 		$start = $this->_date($this->input->post('start_date'));
 		$end   = $this->_date($this->input->post('end_date'));
@@ -273,7 +379,10 @@ class Trips extends CI_Controller {
 		$outside = $this->db->where('trip_id', $trip_id)->group_start()->where('day <', $start)->or_where('day >', $end)->group_end()->count_all_results('plans');
 		if ($outside) $this->_fail("이미 만든 일정 {$outside}개가 새 여행 기간 밖에 있어요. 일정을 먼저 고치거나 기간을 더 넓게 잡아 주세요.", $back);
 
-		$this->db->update('trips', ['title' => mb_substr($title, 0, 100), 'start_date' => $start, 'end_date' => $end], ['id' => $trip_id]);
+		$this->db->update('trips', [
+			'title' => mb_substr($title, 0, 100), 'start_date' => $start, 'end_date' => $end,
+			'vote_deadline' => $this->_date($this->input->post('vote_deadline')),
+		], ['id' => $trip_id]);
 		$this->session->set_flashdata('ok', '모임 정보를 수정했어요.');
 		redirect($back);
 	}
@@ -330,13 +439,7 @@ class Trips extends CI_Controller {
 	{
 		$plan = $this->db->get_where('plans', ['id' => $plan_id])->row();
 		if (!$plan) show_404();
-		$this->_login();
-		if (!$this->admin) // the writer, the trip owner or an admin
-		{
-			$this->_member($plan->trip_id);
-			$owner_id = $this->db->get_where('trips', ['id' => $plan->trip_id])->row()->owner_id;
-			if ($plan->added_by != $this->uid && $owner_id != $this->uid) show_error('일정을 쓴 친구나 방장만 지울 수 있어요.', 403);
-		}
+		$this->_may_remove($plan->trip_id, $plan->added_by);
 		$this->db->delete('plans', ['id' => $plan_id]);
 		redirect("trip/$plan->trip_id#plans");
 	}
@@ -388,6 +491,86 @@ class Trips extends CI_Controller {
 		$trip = $this->db->get_where('trips', ['id' => $trip_id])->row();
 		if ($trip->owner_id != $this->uid) show_error('방장만 할 수 있어요.', 403);
 		return $trip;
+	}
+
+	// the owner or an admin (an admin may be outside the group); returns the trip row
+	private function _manage($trip_id)
+	{
+		$trip = $this->db->get_where('trips', ['id' => $trip_id])->row();
+		if (!$trip) show_404();
+		$this->_login();
+		if (!$this->admin)
+		{
+			$this->_member($trip_id);
+			if ($trip->owner_id != $this->uid) show_error('방장만 할 수 있어요.', 403);
+		}
+		return $trip;
+	}
+
+	// whoever wrote something, the trip owner, or an admin may remove it; other members get 403
+	private function _may_remove($trip_id, $author_id)
+	{
+		$this->_login();
+		if ($this->admin) return;
+		$this->_member($trip_id);
+		if ($author_id != $this->uid && $this->db->get_where('trips', ['id' => $trip_id])->row()->owner_id != $this->uid)
+		{
+			show_error('쓴 친구나 방장만 지울 수 있어요.', 403);
+		}
+	}
+
+	// a member of this trip (404 when that user is not in it)
+	private function _member_row($trip_id, $user_id)
+	{
+		$m = $this->db->select('u.id, u.nickname')->from('trip_members m')->join('users u', 'u.id = m.user_id')
+			->where('m.trip_id', $trip_id)->where('m.user_id', $user_id)->get()->row();
+		if (!$m) show_404();
+		return $m;
+	}
+
+	// take someone out of a group: their votes go with them so the vote bars keep matching the member count,
+	// and the packing items they had taken become free again
+	private function _drop_member($trip_id, $user_id)
+	{
+		$this->db->query('DELETE v FROM votes v JOIN places p ON p.id = v.place_id WHERE p.trip_id = ? AND v.user_id = ?', [$trip_id, $user_id]);
+		$this->db->update('items', ['taker_id' => null], ['trip_id' => $trip_id, 'taker_id' => $user_id]);
+		$this->db->delete('trip_members', ['trip_id' => $trip_id, 'user_id' => $user_id]);
+	}
+
+	// who sends how much to whom so that everyone has paid the same share. Everyone in the group now splits every
+	// expense equally; someone who left but paid something is simply paid back.
+	// ponytail: no per-expense participants; add a "who shared this" list per expense if that is ever needed
+	private function _settle($members, $expenses)
+	{
+		$total = array_sum(array_column($expenses, 'amount'));
+		if (!$total || !$members) return [];
+		$names = $bal = [];
+		foreach ($members as $m) { $names[$m->id] = $m->nickname; $bal[$m->id] = -$total / count($members); }
+		foreach ($expenses as $e)
+		{
+			$names[$e->paid_by] = $names[$e->paid_by] ?? $e->payer;
+			$bal[$e->paid_by] = ($bal[$e->paid_by] ?? 0) + $e->amount;
+		}
+		$pay = $get = [];
+		foreach ($bal as $id => $v)
+		{
+			$v = (int) round($v);
+			if ($v < 0) $pay[$id] = -$v; elseif ($v > 0) $get[$id] = $v;
+		}
+		arsort($pay); arsort($get);
+		$out = [];
+		foreach ($pay as $from => $owe)
+		{
+			foreach ($get as $to => $due) // biggest debtor pays the biggest creditor first
+			{
+				if (!$owe) break;
+				if (!$due) continue;
+				$x = min($owe, $due);
+				$out[] = ['from' => $from, 'to' => $to, 'from_name' => $names[$from], 'to_name' => $names[$to], 'amount' => $x];
+				$owe -= $x; $get[$to] -= $x;
+			}
+		}
+		return $out;
 	}
 
 	// members only; $admin_ok lets an admin through for read-only pages

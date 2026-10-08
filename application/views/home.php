@@ -35,16 +35,29 @@
 		<input type="text" name="title" placeholder="모임 이름 (예: 제주도 여행)" maxlength="100" aria-label="모임 이름" required>
 		<label class="f">여행 시작<input type="date" name="start_date" required></label>
 		<label class="f">여행 끝<input type="date" name="end_date" required></label>
+		<label class="f wide">투표 마감일 (선택)<input type="date" name="vote_deadline"></label>
 		<button class="btn btn-primary">모임 만들기</button>
 	</form>
 
+	<?php // a trip whose last day is over moves to "지난 여행"
+	$today = date('Y-m-d'); $coming = $past = [];
+	foreach ($trips as $t) { if ($t->end_date && $t->end_date < $today) $past[] = $t; else $coming[] = $t; } ?>
 	<h2>내 모임</h2>
-	<?php if ($trips): ?>
+	<?php if ($coming): ?>
 		<div class="trips">
-			<?php foreach ($trips as $t) $this->load->view('trip_card', ['t' => $t]); ?>
+			<?php foreach ($coming as $t) $this->load->view('trip_card', ['t' => $t]); ?>
 		</div>
-	<?php else: ?>
+	<?php elseif (!$past): ?>
 		<p class="empty">아직 참여한 모임이 없어요. 위에서 모임을 만들거나, 친구가 보낸 초대 링크를 눌러 보세요.</p>
+	<?php else: ?>
+		<p class="empty">다가오는 여행이 없어요. 위에서 새 모임을 만들어 보세요.</p>
+	<?php endif ?>
+
+	<?php if ($past): ?>
+		<h2 style="margin-top:40px">지난 여행 <span class="muted"><?= count($past) ?></span></h2>
+		<div class="trips past">
+			<?php foreach ($past as $t) $this->load->view('trip_card', ['t' => $t]); ?>
+		</div>
 	<?php endif ?>
 
 	<?php if (!empty($others)): ?>
@@ -54,6 +67,11 @@
 			<?php foreach ($others as $t) $this->load->view('trip_card', ['t' => $t]); ?>
 		</div>
 	<?php endif ?>
+
+	<div class="install">
+		<p class="muted">📱 <b>앱처럼 쓰기</b> · 아이폰은 Safari 공유 버튼 → "홈 화면에 추가", 안드로이드는 Chrome 메뉴 → "앱 설치"</p>
+		<button type="button" class="btn btn-soft" id="installBtn" hidden>앱으로 설치하기</button>
+	</div>
 
 	<script>
 		// keep the end date from being earlier than the start date

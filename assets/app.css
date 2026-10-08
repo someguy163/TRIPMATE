@@ -74,7 +74,9 @@ form { margin:0; }
 .page-head h1 { font-size:clamp(28px,5vw,40px); }
 .create { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:32px; }
 .create input[name=title], .create .btn { grid-column:1 / -1; }
-@media (min-width:640px) { .create { grid-template-columns:1fr 1fr auto; } .create .btn { grid-column:auto; align-self:end; } }
+@media (min-width:640px) { .create { grid-template-columns:1fr 1fr 1fr auto; } .create .f.wide, .create .btn { grid-column:auto; } .create .btn { align-self:end; } }
+.trips.past { opacity:.7; }
+.install { margin-top:48px; display:flex; flex-wrap:wrap; align-items:center; gap:10px; }
 .f { display:grid; gap:4px; font-size:13px; color:var(--muted); }
 .f.wide { grid-column:1 / -1; }
 .hint { grid-column:1 / -1; margin:0; color:var(--l2); font-size:13px; font-weight:600; }
@@ -105,8 +107,11 @@ form { margin:0; }
 	.cols { display:grid; grid-template-columns:minmax(0,1.15fr) minmax(0,1fr); gap:48px; margin-top:24px; }
 }
 @media (max-width:899px) {
-	.cols[data-tab=places] #plans, .cols[data-tab=plans] #places { display:none; }
+	.cols > section { display:none; }
+	.cols[data-tab=places] #places, .cols[data-tab=plans] #plans, .cols[data-tab=items] #items, .cols[data-tab=expenses] #expenses { display:block; }
+	.seg button { font-size:14px; }
 }
+.cols > section { min-width:0; }
 
 /* candidate = ticket */
 .searchbar { display:flex; gap:8px; }
@@ -150,7 +155,8 @@ form { margin:0; }
 .admin-note, .notice { margin:16px 0 0; padding:10px 16px; border-radius:12px; background:var(--sea-soft); color:var(--sea); font-size:14px; font-weight:600; }
 /* admin looking at a group they are not in: read only (the server refuses writes anyway) */
 .view-only .searchbar, .view-only #results, .view-only .manual, .view-only .plan-form:not(.editing), .view-only .danger,
-.view-only .acts, .view-only [data-copy], .view-only #nc-done, .view-only .invite-first { display:none !important; }
+.view-only .acts, .view-only [data-copy], .view-only [data-share], .view-only #nc-done, .view-only .invite-first,
+.view-only .inline-add, .view-only .exp-form, .view-only .cform, .view-only .take { display:none !important; }
 .view-only .dot, .view-only .vote { pointer-events:none; }
 .manual { margin:16px 0 0; }
 .manual summary { cursor:pointer; color:var(--muted); font-size:14px; padding:6px 0; }
@@ -244,3 +250,63 @@ form { margin:0; }
 .dest .fix { margin-left:6px; padding:0 7px; border-radius:99px; background:var(--citrus); color:#14212B; font-size:11px; font-weight:700; }
 .tag { justify-self:start; margin-top:2px; padding:0 9px; border-radius:99px; background:var(--sea-soft); color:var(--sea); font-size:12px; font-weight:700; }
 select { font:16px var(--font); min-height:44px; padding:0 12px; width:100%; min-width:0; border:1.5px solid var(--line); border-radius:12px; background:var(--surface); color:var(--ink); }
+
+/* invite: copy the link or send it through KakaoTalk */
+.invite-btns { display:flex; flex-wrap:wrap; gap:8px; }
+.btn-kakao.sm { min-height:44px; padding:0 20px; font-size:15px; }
+
+/* vote deadline */
+.deadline { margin:-4px 0 12px; padding:10px 14px; border-radius:12px; background:var(--sea-soft); color:var(--sea); font-size:14px; font-weight:600; }
+.deadline.over { background:color-mix(in srgb,var(--citrus) 28%,var(--surface)); color:var(--ink); }
+.vote:disabled { opacity:.6; cursor:not-allowed; }
+
+/* member management (owner / admin) */
+.manage { margin-top:10px; }
+.manage summary { cursor:pointer; color:var(--muted); font-size:14px; padding:4px 0; width:max-content; }
+.manage ul { list-style:none; margin:6px 0 0; padding:0; display:grid; gap:6px; }
+.manage li { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.manage .who { flex:1; min-width:8em; }
+
+/* weather strip above the plans */
+.wx { margin:0 0 16px; }
+.wx-row { display:flex; gap:8px; overflow-x:auto; padding:6px 0 8px; }
+.wx-day { flex:none; display:grid; justify-items:center; gap:1px; min-width:78px; padding:8px 10px; border:1.5px solid var(--line); border-radius:12px; background:var(--surface); color:var(--muted); font-size:12px; }
+.wx-day b { font-size:24px; line-height:1.3; }
+.wx-day span:nth-child(3) { color:var(--ink); font-weight:600; font-size:13px; }
+
+/* notes on a plan */
+.notes { margin-top:2px; }
+.notes summary { cursor:pointer; color:var(--muted); font-size:13px; padding:2px 0; width:max-content; }
+.clist { list-style:none; margin:6px 0; padding:0; display:grid; gap:4px; }
+.clist li { display:flex; align-items:flex-start; gap:6px; font-size:14px; }
+.clist li > span { flex:1; min-width:0; }
+.clist .x { flex:none; width:28px; height:28px; font-size:13px; }
+.cform { display:flex; gap:6px; margin-top:6px; }
+.cform input { flex:1; min-height:38px; font-size:15px; }
+
+/* packing list + expenses */
+.lead-in { margin:-6px 0 12px; }
+.inline-add { display:flex; gap:8px; margin-bottom:12px; }
+.inline-add input { flex:1; }
+.rows { list-style:none; margin:12px 0 0; padding:0; }
+.rows li { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--line); --c:var(--sea); }
+.rows .what { flex:1; min-width:0; }
+.rows .where { display:block; }
+.money { font-variant-numeric:tabular-nums; white-space:nowrap; }
+.exp-form { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.exp-form .btn { grid-column:1 / -1; }
+#expenses h3 { font-size:18px; margin:22px 0 8px; }
+.sum { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:16px 0 0; }
+.sum > div { padding:12px 16px; border:1.5px solid var(--ink); border-radius:var(--r); background:var(--surface); }
+.sum small { display:block; color:var(--muted); }
+.sum b { font:24px var(--display); font-weight:400; }
+.settle { list-style:none; margin:0; padding:0; display:grid; gap:6px; }
+.settle li { display:flex; align-items:center; gap:8px; padding:10px 14px; border:1.5px solid var(--line); border-radius:12px; background:var(--surface); }
+.settle li span { margin-left:auto; font:19px var(--display); }
+.settle li.me { border-color:var(--sea); background:var(--sea-soft); }
+
+/* the plan's destination box is only a display: it follows the chip above */
+select:disabled { opacity:1; cursor:not-allowed; border-color:var(--sea); background:var(--sea-soft); color:var(--ink); -webkit-text-fill-color:var(--ink); }
+/* while a plan's notes are open the row grows: keep the dot, time and buttons at the top instead of the middle */
+.stop:has(.notes[open]) { align-items:flex-start; }
+.stop:has(.notes[open]) .tick { top:12px; margin-top:0; }

@@ -8,6 +8,11 @@
 <meta name="theme-color" content="#0E1519" media="(prefers-color-scheme: dark)">
 <title><?= isset($title) ? html_escape($title) . ' - ' : '' ?>TripMate</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230A7F74'/%3E%3Cpath d='M7 21c4-9 9-9 12-4s5 2 6-6' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3Ccircle cx='25' cy='11' r='2.5' fill='%23FFB02E'/%3E%3C/svg%3E">
+<link rel="manifest" href="<?= base_url('manifest.json') ?>">
+<link rel="apple-touch-icon" href="<?= base_url('assets/icon-180.png') ?>">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="TripMate">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Do+Hyeon&display=swap">
 <link rel="stylesheet" href="<?= base_url('assets/app.css') ?>?v=<?= filemtime(FCPATH . 'assets/app.css') ?>">

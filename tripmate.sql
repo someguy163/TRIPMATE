@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS trips (
   title       VARCHAR(100) NOT NULL,
   start_date  DATE NULL,            -- 여행 기간: 이 안에서만 일정을 만들 수 있다
   end_date    DATE NULL,
+  vote_deadline DATE NULL,          -- 이 날이 지나면 투표가 마감된다 (비우면 마감 없음)
   invite_code CHAR(12) NOT NULL UNIQUE,
   owner_id    INT UNSIGNED NOT NULL,
   chosen_place_id INT UNSIGNED NULL, -- 방장이 확정한 여행지
@@ -69,4 +70,39 @@ CREATE TABLE IF NOT EXISTS plans (
   FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
   FOREIGN KEY (dest_id) REFERENCES places(id) ON DELETE SET NULL,
   FOREIGN KEY (added_by) REFERENCES users(id)
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 일정 메모(댓글)
+CREATE TABLE IF NOT EXISTS comments (
+  id         INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  plan_id    INT UNSIGNED NOT NULL,
+  user_id    INT UNSIGNED NOT NULL,
+  body       VARCHAR(300) NOT NULL,
+  created_at DATETIME NOT NULL,
+  FOREIGN KEY (plan_id) REFERENCES plans(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 준비물 체크리스트 (taker_id = 챙기기로 한 친구)
+CREATE TABLE IF NOT EXISTS items (
+  id       INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  trip_id  INT UNSIGNED NOT NULL,
+  name     VARCHAR(100) NOT NULL,
+  taker_id INT UNSIGNED NULL,
+  done     TINYINT(1) NOT NULL DEFAULT 0,
+  added_by INT UNSIGNED NOT NULL,
+  FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
+  FOREIGN KEY (taker_id) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (added_by) REFERENCES users(id)
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 경비 (낸 사람 paid_by 가 적은 금액, 원 단위)
+CREATE TABLE IF NOT EXISTS expenses (
+  id      INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  trip_id INT UNSIGNED NOT NULL,
+  paid_by INT UNSIGNED NOT NULL,
+  title   VARCHAR(100) NOT NULL,
+  amount  INT UNSIGNED NOT NULL,
+  FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
+  FOREIGN KEY (paid_by) REFERENCES users(id)
 ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

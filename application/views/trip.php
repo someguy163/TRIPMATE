@@ -16,6 +16,18 @@ $md = function ($d) use ($week) { return date('n월 j일', strtotime($d)) . '(' 
 $destName = []; $destCount = [];
 foreach ($places as $p) { $destName[(int) $p->id] = $p->name; $destCount[(int) $p->id] = 0; }
 foreach ($plans as $pl) if (isset($destCount[(int) $pl->dest_id])) $destCount[(int) $pl->dest_id]++;
+$jf = JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE; // for values placed inside <script>
+$today  = date('Y-m-d');
+$closed = $trip->vote_deadline && $trip->vote_deadline < $today; // the vote is over
+$leaders = []; foreach ($places as $p) if ($max > 0 && (int) $p->votes === $max) $leaders[] = $p->name;
+$wx = []; // candidates whose position is known: the weather is looked up for them
+foreach ($places as $p) if ($p->lat !== null && $p->lng !== null) $wx[(int) $p->id] = [(float) $p->lat, (float) $p->lng];
+$inviteUrl = site_url('join/' . $trip->invite_code);
+$inviteBtns = function () use ($inviteUrl, $js_key) { // copy the link, or send it through KakaoTalk
+	$u = html_escape($inviteUrl);
+	echo '<button type="button" class="btn btn-primary" data-copy data-url="' . $u . '">초대 링크 복사</button>';
+	if ($js_key !== '') echo '<button type="button" class="btn btn-kakao sm" data-share data-url="' . $u . '">카카오톡으로 보내기</button>';
+};
 $mapped = []; // plans that have coordinates, in time order; the day number picks the line colour
 foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = [
 	'dest' => isset($destName[(int) $pl->dest_id]) ? (int) $pl->dest_id : 0,
@@ -39,9 +51,23 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 				<li class="chip"><?= avatar($m->nickname, $m->profile_img) ?><?= html_escape($m->nickname) ?><?= $m->id == $trip->owner_id ? '<span class="owner">방장</span>' : '' ?></li>
 			<?php endforeach ?>
 		</ul>
+		<?php if ($can_edit_trip && $n > 1): // hand the group over, or send someone away ?>
+			<details class="manage">
+				<summary>멤버 관리</summary>
+				<ul>
+					<?php foreach ($members as $m): if ($m->id == $trip->owner_id) continue; ?>
+						<li>
+							<span class="who"><?= avatar($m->nickname, $m->profile_img) ?><b><?= html_escape($m->nickname) ?></b></span>
+							<?= form_open("trip/$trip->id/owner/$m->id", ['onsubmit' => 'return confirm(' . html_escape(json_encode($m->nickname . '님에게 방장을 넘길까요?', JSON_UNESCAPED_UNICODE)) . ')']) ?><button class="btn btn-soft">방장 넘기기</button></form>
+							<?= form_open("trip/$trip->id/kick/$m->id", ['onsubmit' => 'return confirm(' . html_escape(json_encode($m->nickname . '님을 내보낼까요? 투표한 내용이 사라지고, 초대 링크로 다시 들어올 수 있어요.', JSON_UNESCAPED_UNICODE)) . ')']) ?><button class="btn btn-quiet">내보내기</button></form>
+						</li>
+					<?php endforeach ?>
+				</ul>
+			</details>
+		<?php endif ?>
 	</div>
-	<?php if ($n > 1 || !$owner): // while the owner is alone, the big invite card below is the only copy button ?>
-		<button type="button" class="btn btn-primary" data-copy data-url="<?= html_escape(site_url('join/' . $trip->invite_code)) ?>">초대 링크 복사</button>
+	<?php if ($n > 1 || !$owner): // while the owner is alone, the big invite card below has the buttons ?>
+		<div class="invite-btns"><?php $inviteBtns() ?></div>
 	<?php endif ?>
 </section>
 
@@ -51,6 +77,7 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 		<label class="f wide">모임 이름<input type="text" name="title" value="<?= html_escape($trip->title) ?>" maxlength="100" required></label>
 		<label class="f">여행 시작<input type="date" name="start_date" value="<?= html_escape($trip->start_date) ?>" required></label>
 		<label class="f">여행 끝<input type="date" name="end_date" value="<?= html_escape($trip->end_date) ?>" required></label>
+		<label class="f wide">투표 마감일 (선택, 비우면 마감 없음)<input type="date" name="vote_deadline" value="<?= html_escape($trip->vote_deadline) ?>"></label>
 		<p class="muted wide">이미 만든 일정이 새 기간 밖에 있으면 저장되지 않아요. 일정을 먼저 고쳐 주세요.</p>
 		<div class="wide edit-actions">
 			<button class="btn btn-primary">저장</button>
@@ -62,8 +89,8 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 <?php if ($n === 1 && $owner): ?>
 	<section class="invite-first">
 		<h2>먼저 친구를 초대해요</h2>
-		<p>링크를 복사해 카카오톡으로 보내 보세요. 친구가 들어오면 같이 후보를 고르고 일정을 짤 수 있어요.</p>
-		<button type="button" class="btn btn-primary" data-copy data-url="<?= html_escape(site_url('join/' . $trip->invite_code)) ?>">초대 링크 복사</button>
+		<p>링크를 카카오톡으로 보내 보세요. 친구가 들어오면 같이 후보를 고르고 일정을 짤 수 있어요.</p>
+		<div class="invite-btns"><?php $inviteBtns() ?></div>
 	</section>
 <?php endif ?>
 
@@ -83,13 +110,26 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 <?php endif ?>
 
 <div class="seg" role="tablist">
-	<button type="button" role="tab" data-tab="places" aria-selected="true">여행지 후보</button>
+	<button type="button" role="tab" data-tab="places" aria-selected="true">여행지</button>
 	<button type="button" role="tab" data-tab="plans" aria-selected="false">일정</button>
+	<button type="button" role="tab" data-tab="items" aria-selected="false">준비물</button>
+	<button type="button" role="tab" data-tab="expenses" aria-selected="false">정산</button>
 </div>
 
 <div class="cols" data-tab="places">
 	<section id="places">
 		<h2>어디로 갈까요?</h2>
+		<?php if ($trip->vote_deadline): // the vote has an end date: count down, and after it show the winner ?>
+			<p class="deadline<?= $closed ? ' over' : '' ?>">
+				<?php if (!$closed): $left = (int) round((strtotime($trip->vote_deadline) - strtotime($today)) / 86400); ?>
+					🗳️ 투표 마감 <b><?= $md($trip->vote_deadline) ?></b> <?= $left === 0 ? '(오늘까지)' : "(D-$left)" ?>
+				<?php elseif ($leaders): ?>
+					🗳️ 투표가 마감됐어요. <?= count($leaders) > 1 ? '공동 1위' : '1위' ?> <b><?= html_escape(implode(', ', $leaders)) ?></b> (<?= $max ?>표)<?= $owner && !$chosen ? ' · 아래에서 “여기로 확정”을 눌러 주세요' : '' ?>
+				<?php else: ?>
+					🗳️ 투표가 마감됐어요. 투표한 사람이 없어요.
+				<?php endif ?>
+			</p>
+		<?php endif ?>
 		<form id="search" class="searchbar" role="search">
 			<input type="search" id="q" placeholder="장소 검색 (예: 성산일출봉)" aria-label="카카오맵에서 장소 검색" required>
 			<button class="btn btn-primary">검색</button>
@@ -119,7 +159,7 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 					</div>
 				</div>
 				<?= form_open("place/$p->id/vote", ['class' => 'ticket-stub']) ?>
-					<button class="vote<?= $p->mine ? ' on' : '' ?>" aria-pressed="<?= $p->mine ? 'true' : 'false' ?>" aria-label="이 장소에 투표">👍<b><?= (int) $p->votes ?></b></button>
+					<button class="vote<?= $p->mine ? ' on' : '' ?>" aria-pressed="<?= $p->mine ? 'true' : 'false' ?>" aria-label="<?= $closed ? '투표가 마감됐어요' : '이 장소에 투표' ?>"<?= $closed ? ' disabled' : '' ?>>👍<b><?= (int) $p->votes ?></b></button>
 				</form>
 			</article>
 		<?php endforeach ?>
@@ -144,10 +184,11 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 			<div class="dests" role="group" aria-label="여행지별로 보기">
 				<button type="button" class="dest" data-dest="all" aria-pressed="true">전체<small><?= count($plans) ?></small></button>
 				<?php foreach ($places as $p): ?>
-					<button type="button" class="dest" data-dest="<?= (int) $p->id ?>" aria-pressed="false"><?= html_escape($p->name) ?><?= $chosen && $chosen->id == $p->id ? '<span class="fix">확정</span>' : '' ?><small><?= $destCount[(int) $p->id] ?></small></button>
+					<button type="button" class="dest" data-dest="<?= (int) $p->id ?>" data-name="<?= html_escape($p->name) ?>" aria-pressed="false"><?= html_escape($p->name) ?><?= $chosen && $chosen->id == $p->id ? '<span class="fix">확정</span>' : '' ?><small><?= $destCount[(int) $p->id] ?></small></button>
 				<?php endforeach ?>
 			</div>
 		<?php endif ?>
+		<div id="wx" class="wx" hidden></div>
 		<?php if ($mapped && $js_key): ?>
 			<div class="mapbox">
 				<div id="maploading" class="maploading" role="status"><span class="spin"></span>지도를 불러오는 중…</div>
@@ -177,12 +218,30 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 						<button class="dot" aria-pressed="<?= $pl->done ? 'true' : 'false' ?>" aria-label="<?= $pl->done ? '완료 취소' : '완료로 표시' ?>"><i></i></button>
 					</form>
 					<span class="time"><?php if ($pl->at_time): ?><b><?= substr($pl->at_time, 0, 5) ?></b><?php if ($pl->end_time): ?><small><?= substr($pl->end_time, 0, 5) ?></small><?php endif ?><?php endif ?></span>
-					<span class="body">
+					<div class="body">
 						<span class="what"><?= html_escape($pl->title) ?></span>
 						<?php if ($pl->place): ?><small class="where">📍 <?= html_escape($pl->place) ?></small><?php endif ?>
 						<?php if (isset($destName[(int) $pl->dest_id])): ?><small class="tag"><?= html_escape($destName[(int) $pl->dest_id]) ?></small><?php endif ?>
 						<small class="who"><?= avatar($pl->author, $pl->author_img) ?>작성 <b><?= html_escape($pl->author) ?></b></small>
-					</span>
+						<?php $cl = isset($comments[$pl->id]) ? $comments[$pl->id] : []; // notes on this plan ?>
+						<details class="notes" data-plan-id="<?= (int) $pl->id ?>">
+							<summary>💬 메모<?= $cl ? ' ' . count($cl) : '' ?></summary>
+							<ul class="clist">
+								<?php foreach ($cl as $c): ?>
+									<li>
+										<span><b><?= html_escape($c->nickname) ?></b> <?= html_escape($c->body) ?> <small class="muted"><?= date('n/j H:i', strtotime($c->created_at)) ?></small></span>
+										<?php if ($owner || !empty($is_admin) || $c->user_id == $me): ?>
+											<?= form_open("comment/$c->id/delete") ?><button class="x" aria-label="메모 삭제">✕</button></form>
+										<?php endif ?>
+									</li>
+								<?php endforeach ?>
+							</ul>
+							<?= form_open("plan/$pl->id/comment", ['class' => 'cform']) ?>
+								<input type="text" name="body" placeholder="메모 남기기" maxlength="300" aria-label="메모" required>
+								<button class="btn btn-soft">남기기</button>
+							</form>
+						</details>
+					</div>
 					<?php if (!empty($is_admin) || $pl->added_by == $me): // only the writer (or an admin) sees the edit button ?>
 						<button type="button" class="pencil" aria-label="일정 수정" data-edit-plan="<?= html_escape(json_encode([
 							'id' => (int) $pl->id, 'dest' => isset($destName[(int) $pl->dest_id]) ? (int) $pl->dest_id : 0, 'day' => $pl->day, 'start' => substr((string) $pl->at_time, 0, 5), 'end' => substr((string) $pl->end_time, 0, 5),
@@ -199,12 +258,15 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 		<div<?= $places ? '' : ' hidden' ?>>
 		<?= form_open("trip/$trip->id/plan", ['class' => 'plan-form']) ?>
 			<p class="edit-note wide" id="editNote" hidden>일정을 수정하는 중이에요</p>
-			<label class="f wide">어느 여행지 일정이에요?
-				<select name="dest_id" required>
-					<option value="" disabled selected>여행지를 골라 주세요</option>
+			<?php // the destination follows the chip picked above: shown here, but not changeable (the hidden field carries it) ?>
+			<label class="f wide">어느 여행지 일정이에요? (위에서 고른 여행지로 정해져요)
+				<select id="destView" disabled>
+					<option value="">위에서 여행지를 먼저 골라 주세요</option>
 					<?php foreach ($places as $p): ?><option value="<?= (int) $p->id ?>"><?= html_escape($p->name) ?></option><?php endforeach ?>
 				</select>
+				<input type="hidden" name="dest_id" value="">
 			</label>
+			<p class="muted wide" id="destHint" hidden>위의 여행지 버튼(전체 옆)을 눌러 어느 여행지의 일정인지 먼저 골라 주세요.</p>
 			<label class="f wide">날짜<input type="date" name="day" value="<?= html_escape($last) ?>"<?= $trip->start_date ? ' min="' . $trip->start_date . '" max="' . $trip->end_date . '"' : '' ?> required></label>
 			<label class="f">몇 시부터<input type="time" name="at_time" required></label>
 			<label class="f">몇 시까지<input type="time" name="end_time" required></label>
@@ -224,6 +286,72 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 			<button class="btn btn-primary">일정 추가</button>
 		</form>
 		</div>
+	</section>
+
+	<section id="items">
+		<h2>준비물</h2>
+		<p class="muted lead-in">같이 챙길 것을 적고, 누가 가져갈지 정해요.</p>
+		<?= form_open("trip/$trip->id/item", ['class' => 'inline-add']) ?>
+			<input type="text" name="name" placeholder="준비물 (예: 보조배터리)" maxlength="100" aria-label="준비물" required>
+			<button class="btn btn-primary">추가</button>
+		</form>
+		<?php if (!$items): ?><p class="empty">아직 준비물이 없어요. 텐트, 충전기, 간식처럼 적어 보세요.</p><?php endif ?>
+		<ul class="rows">
+			<?php foreach ($items as $it): $mine = $it->taker_id == $me; ?>
+				<li class="item<?= $it->done ? ' done' : '' ?>">
+					<?= form_open("item/$it->id/done") ?>
+						<button class="dot" aria-pressed="<?= $it->done ? 'true' : 'false' ?>" aria-label="<?= $it->done ? '챙김 취소' : '챙겼어요' ?>"><i></i></button>
+					</form>
+					<span class="what"><?= html_escape($it->name) ?></span>
+					<?php if ($it->taker_id && !$mine): ?>
+						<span class="tag">🎒 <?= html_escape($it->taker) ?></span>
+					<?php else: ?>
+						<?= form_open("item/$it->id/take", ['class' => 'take']) ?><button class="btn btn-soft<?= $mine ? ' on' : '' ?>"><?= $mine ? '내가 챙겨요 ✓' : '내가 챙길게요' ?></button></form>
+					<?php endif ?>
+					<?php if ($owner || !empty($is_admin) || $it->added_by == $me): ?>
+						<?= form_open("item/$it->id/delete") ?><button class="x" aria-label="준비물 삭제">✕</button></form>
+					<?php endif ?>
+				</li>
+			<?php endforeach ?>
+		</ul>
+	</section>
+
+	<section id="expenses">
+		<h2>정산</h2>
+		<?php $total = array_sum(array_column($expenses, 'amount')); ?>
+		<p class="muted lead-in">돈을 낸 사람이 적으면, 모인 금액을 모두 똑같이 나눠서 계산해요.</p>
+		<?= form_open("trip/$trip->id/expense", ['class' => 'exp-form']) ?>
+			<input type="text" name="title" placeholder="어디에 썼나요? (예: 점심 식사)" maxlength="100" aria-label="쓴 내용" required>
+			<input type="text" name="amount" inputmode="numeric" placeholder="낸 금액 (원)" aria-label="낸 금액" required>
+			<button class="btn btn-primary">내가 냈어요</button>
+		</form>
+		<?php if ($expenses): ?>
+			<div class="sum">
+				<div><small>총 지출</small><b><?= number_format($total) ?>원</b></div>
+				<div><small>한 명당</small><b><?= number_format(round($total / max(1, $n))) ?>원</b></div>
+			</div>
+			<h3>이렇게 보내면 끝이에요</h3>
+			<?php if ($settle): ?>
+				<ul class="settle">
+					<?php foreach ($settle as $s): ?>
+						<li<?= $s['from'] == $me || $s['to'] == $me ? ' class="me"' : '' ?>><b><?= html_escape($s['from_name']) ?></b> → <b><?= html_escape($s['to_name']) ?></b><span><?= number_format($s['amount']) ?>원</span></li>
+					<?php endforeach ?>
+				</ul>
+			<?php else: ?><p class="empty">보낼 돈이 없어요. 모두 똑같이 냈어요 👍</p><?php endif ?>
+			<h3>쓴 내역</h3>
+			<ul class="rows">
+				<?php foreach ($expenses as $e): ?>
+					<li>
+						<span class="who"><?= avatar($e->payer, $e->payer_img) ?></span>
+						<span class="what"><?= html_escape($e->title) ?><small class="where"><?= html_escape($e->payer) ?></small></span>
+						<b class="money"><?= number_format($e->amount) ?>원</b>
+						<?php if ($owner || !empty($is_admin) || $e->paid_by == $me): ?>
+							<?= form_open("expense/$e->id/delete") ?><button class="x" aria-label="내역 삭제">✕</button></form>
+						<?php endif ?>
+					</li>
+				<?php endforeach ?>
+			</ul>
+		<?php else: ?><p class="empty">아직 적은 내역이 없어요. 쓴 돈을 적으면 누가 누구에게 보낼지 계산해 줘요.</p><?php endif ?>
 	</section>
 </div>
 
@@ -315,7 +443,8 @@ function tab(name) {
 	if (name === 'plans') drawMap();
 }
 document.querySelectorAll('.seg button').forEach(b => b.onclick = () => { tab(b.dataset.tab); history.replaceState(null, '', '#' + b.dataset.tab); });
-if (location.hash === '#plans') tab('plans');
+const startTab = location.hash.slice(1); // #plans, #items, #expenses: stay on the panel that was just saved
+if ([...document.querySelectorAll('.seg button')].some(b => b.dataset.tab === startTab)) { tab(startTab); document.getElementById(startTab).scrollIntoView(); }
 if (getComputedStyle(document.getElementById('plans')).display !== 'none') drawMap(); // desktop: both panels are visible
 
 // "지금 할 일": picked from the plan list with the viewer's own clock, refreshed every minute
@@ -382,11 +511,12 @@ function syncTimes(ev) {
 
 // "일정에 넣기": carry a candidate (name + map position) into the plan form so voting leads straight into scheduling
 document.querySelectorAll('[data-plan]').forEach(b => b.onclick = () => {
+	if (planForm.classList.contains('editing')) cancelPlanEdit.onclick(); // leave edit mode first
 	tab('plans');
 	const f = document.querySelector('.plan-form'), e = f.elements;
+	applyDest(b.dataset.dest); // the plan belongs to the candidate it was made from: show it and lock the form to it
 	e.title.value = e.place.value = b.dataset.plan;
 	e.lat.value = b.dataset.lat; e.lng.value = b.dataset.lng;
-	e.dest_id.value = b.dataset.dest; // the plan belongs to the candidate it was made from
 	f.scrollIntoView({ block: 'center', behavior: 'smooth' });
 	(e.day.value ? e.at_time : e.day).focus({ preventScroll: true });
 });
@@ -462,7 +592,7 @@ document.querySelectorAll('[data-edit-plan]').forEach(b => b.onclick = () => {
 	planForm.setAttribute('action', '<?= site_url('plan') ?>/' + p.id + '/edit');
 	pf.day.value = p.day; pf.at_time.value = p.start; pf.end_time.value = p.end; pf.title.value = p.title;
 	pf.place.value = p.place; pf.lat.value = p.lat === null ? '' : p.lat; pf.lng.value = p.lng === null ? '' : p.lng;
-	pf.dest_id.value = p.dest ? String(p.dest) : '';
+	setDest(p.dest ? String(p.dest) : '');
 	planSubmit.textContent = '수정 저장'; cancelPlanEdit.hidden = false; editNote.hidden = false; planForm.classList.add('editing');
 	syncTimes();
 	planForm.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -481,8 +611,15 @@ if (tripEdit) {
 
 // pick a destination: the plan list and the map show only its plans
 const chips = [...document.querySelectorAll('.dest')], destEmpty = document.getElementById('destEmpty');
-// the plan form starts on the destination being viewed, so a new plan lands where the person is looking
-function syncDestSelect() { if (!planForm.classList.contains('editing')) pf.dest_id.value = curDest !== 'all' ? curDest : (CHOSEN ? String(CHOSEN) : ''); }
+const ids = chips.map(c => c.dataset.dest).filter(d => d !== 'all');
+const destView = document.getElementById('destView'), destHint = document.getElementById('destHint');
+// the plan's destination is never typed in: it follows the chip being viewed (or the candidate "일정에 넣기" came from).
+// The visible box is disabled, so the hidden field carries the value; with no destination there is nothing to save yet.
+function setDest(v) { pf.dest_id.value = destView.value = v; planSubmit.disabled = !v; destHint.hidden = !!v; }
+function syncDestSelect() {
+	if (planForm.classList.contains('editing') && pf.dest_id.value) return; // an edited plan keeps its destination
+	setDest(curDest !== 'all' ? curDest : (CHOSEN ? String(CHOSEN) : (ids.length === 1 ? ids[0] : '')));
+}
 function applyDest(v) {
 	curDest = v;
 	try { sessionStorage.setItem(TRIP_KEY, v); } catch (_) {}
@@ -493,8 +630,46 @@ function applyDest(v) {
 		destEmpty.hidden = v === 'all' || !!document.querySelector('.stop:not([hidden])');
 	}
 	syncDestSelect();
+	showWeather();
 	renderPins();
 }
+
+// weather for the trip's days at the destination in view (Open-Meteo: free, no key, forecasts about 16 days ahead)
+const WX = <?= json_encode($wx, $jf) ?>, TRIP_FROM = <?= json_encode((string) $trip->start_date) ?>, TRIP_TO = <?= json_encode((string) $trip->end_date) ?>;
+const wxBox = document.getElementById('wx'), wxCache = {}, DOW = ['일', '월', '화', '수', '목', '금', '토'];
+let wxToken = 0;
+const wxIcon = c => c === 0 ? '☀️' : c <= 2 ? '🌤️' : c === 3 ? '☁️' : c <= 48 ? '🌫️' : c <= 57 ? '🌦️' : c <= 67 ? '🌧️' : c <= 77 ? '🌨️' : c <= 82 ? '🌧️' : c <= 86 ? '🌨️' : '⛈️';
+async function showWeather() {
+	const token = ++wxToken, id = curDest !== 'all' ? curDest : (CHOSEN ? String(CHOSEN) : ids.find(i => WX[i]));
+	wxBox.hidden = true; wxBox.textContent = '';
+	if (!TRIP_FROM || !WX[id]) return;                       // no dates, or the place was typed by hand (no position)
+	const now = new Date(), today = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`, lim = new Date(now.getTime() + 15 * 864e5);
+	const last = `${lim.getFullYear()}-${pad(lim.getMonth() + 1)}-${pad(lim.getDate())}`;
+	const from = TRIP_FROM > today ? TRIP_FROM : today, to = TRIP_TO < last ? TRIP_TO : last;
+	const title = document.createElement('p'), name = (chips.find(c => c.dataset.dest === id) || {}).dataset?.name || '';
+	title.className = 'muted'; title.textContent = `${name} 날씨`;
+	if (TRIP_TO < today) return;                              // the trip is over
+	if (from > to) { title.textContent += ': 여행 16일 전부터 볼 수 있어요'; wxBox.append(title); wxBox.hidden = false; return; }
+	const key = `${id}|${from}|${to}`;
+	if (!wxCache[key]) {
+		try {
+			const u = `https://api.open-meteo.com/v1/forecast?latitude=${WX[id][0]}&longitude=${WX[id][1]}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max&timezone=Asia%2FSeoul&start_date=${from}&end_date=${to}`;
+			wxCache[key] = (await (await fetch(u)).json()).daily;
+		} catch (_) { return; }
+	}
+	const d = wxCache[key];
+	if (token !== wxToken || !d || !d.time) return;           // the person picked another destination meanwhile
+	const row = document.createElement('div'); row.className = 'wx-row';
+	d.time.forEach((day, i) => {
+		const x = document.createElement('div'), dt = new Date(day + 'T00:00'), rain = d.precipitation_probability_max && d.precipitation_probability_max[i];
+		x.className = 'wx-day';
+		[`${dt.getMonth() + 1}/${dt.getDate()}(${DOW[dt.getDay()]})`, wxIcon(d.weather_code[i]), `${Math.round(d.temperature_2m_max[i])}° / ${Math.round(d.temperature_2m_min[i])}°`, rain >= 30 ? `☔ ${rain}%` : '']
+			.forEach((t, k) => { const e = document.createElement(k === 1 ? 'b' : 'span'); e.textContent = t; x.append(e); });
+		row.append(x);
+	});
+	wxBox.append(title, row); wxBox.hidden = false;
+}
+
 if (chips.length) {
 	chips.forEach(c => c.onclick = () => applyDest(c.dataset.dest));
 	let first = CHOSEN ? String(CHOSEN) : 'all';   // a confirmed destination opens on its own plans
@@ -506,6 +681,39 @@ if (chips.length) {
 		if (d && !showsDest(curDest, d)) { try { sessionStorage.setItem(TRIP_KEY, d); } catch (_) {} }
 	});
 }
+
+// "카카오톡으로 보내기": the Kakao JavaScript SDK opens KakaoTalk's friend picker with the invite link in the message
+const KAKAO_KEY = <?= json_encode($js_key, $jf) ?>, ME = <?= json_encode((string) $this->session->userdata('nick'), $jf) ?>, TRIP_NAME = <?= json_encode($trip->title, $jf) ?>;
+let kakaoSdk;
+const loadKakao = () => kakaoSdk = kakaoSdk || new Promise((ok, fail) => {
+	if (window.Kakao) return ok();
+	const s = document.createElement('script');
+	s.src = 'https://t1.kakaocdn.net/kakao_js_sdk/2.7.2/kakao.min.js'; s.onload = ok; s.onerror = fail;
+	document.head.append(s);
+});
+document.querySelectorAll('[data-share]').forEach(b => b.onclick = async () => {
+	b.classList.add('busy');
+	try {
+		await loadKakao();
+		if (!Kakao.isInitialized()) Kakao.init(KAKAO_KEY);
+		Kakao.Share.sendDefault({
+			objectType: 'text',
+			text: `${ME}님이 '${TRIP_NAME}' 여행 모임에 초대했어요! 같이 여행지를 투표로 정하고 일정을 짜요.`,
+			link: { mobileWebUrl: b.dataset.url, webUrl: b.dataset.url },
+			buttonTitle: '모임 참여하기',
+		});
+	} catch (_) { prompt('카카오톡 공유를 열지 못했어요. 이 링크를 친구에게 직접 보내 주세요', b.dataset.url); }
+	finally { b.classList.remove('busy'); }
+});
+
+// notes on a plan: leaving or deleting one reloads the page, so the plan's notes are reopened afterwards
+document.querySelectorAll('.notes').forEach(d => d.addEventListener('submit', () => { try { sessionStorage.setItem('note', d.dataset.planId); } catch (_) {} }));
+try {
+	const n = sessionStorage.getItem('note');
+	sessionStorage.removeItem('note');
+	const d = n && [...document.querySelectorAll('.notes')].find(x => x.dataset.planId === n);
+	if (d) { d.open = true; d.scrollIntoView({ block: 'center' }); }
+} catch (_) {}
 </script>
 
 <?php $this->load->view('footer'); ?>
