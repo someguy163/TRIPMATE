@@ -8,6 +8,7 @@ class Auth extends CI_Controller {
 		parent::__construct();
 		$this->config->load('kakao');
 		$this->load->helper('http');
+		$this->load->helper('talkcal');
 	}
 
 	public function login()
@@ -117,39 +118,49 @@ class Auth extends CI_Controller {
 		$plans = $this->db->select('p.*, u.nickname AS author, d.name AS dest_name')->from('plans p')->join('users u', 'u.id = p.added_by')
 			->join('places d', 'd.id = p.dest_id', 'left')->where('p.trip_id', $job['trip'])->where_in('p.id', $job['plans'])
 			->order_by('p.day')->order_by('p.at_time')->get()->result();
-		$seoul = new DateTimeZone('Asia/Seoul');
-		$ts  = function ($day, $time) use ($seoul) { return (new DateTime("$day $time", $seoul))->getTimestamp(); };
-		// Kakao wants RFC3339 UTC times in whole 5-minute steps: the start is moved earlier and the end later, so the plan is still covered
-		$rfc = function ($t, $up) { return gmdate('Y-m-d\TH:i:s\Z', ($up ? ceil($t / 300) : floor($t / 300)) * 300); };
+		$wanted = array_map(function ($pl) use ($trip) { return talkcal_event($pl, $trip); }, $plans);
+		if (!$wanted) $fail('카카오톡 캘린더에 넣을 일정이 없어요.');
+		$more = function ($res) { return isset($res['msg']) ? " ({$res['code']}) {$res['msg']}" : ' (카카오에서 응답이 없어요)'; };
+		// the console hint only helps when Kakao is complaining about consent / permission, not about the data
+		$hint = function ($why) { return preg_match('/scope|permission|consent|authoriz|동의|권한/i', $why) ? ' 카카오 개발자 콘솔의 톡캘린더 동의항목과 사용 권한(앱 멤버만 가능)을 확인해 주세요.' : ''; };
 
-		$sent = 0; $why = '';
-		foreach ($plans as $pl)
+		// what the calendar already holds around these plans (the list API gives at most 31 days at a time).
+		// ponytail: one page of 1000 events per window; has_next is not followed
+		$first = min(array_map(function ($e) { return strtotime($e['time']['start_at']); }, $wanted)) - 3600;
+		$last  = max(array_map(function ($e) { return strtotime($e['time']['end_at']); }, $wanted)) + 3600;
+		$existing = [];
+		for ($from = $first; $from < $last; $from += 30 * 86400)
 		{
-			$from = $ts($pl->day, $pl->at_time);
-			$to   = $pl->end_time ? $ts($pl->day, $pl->end_time) : $from + 3600; // no end time: one hour
-			$event = [
-				'title'       => mb_substr($pl->title, 0, 50),
-				'time'        => ['start_at' => $rfc($from, false), 'end_at' => $rfc($to, true), 'time_zone' => 'Asia/Seoul', 'all_day' => false, 'lunar' => false],
-				'description' => ($pl->dest_name ? $pl->dest_name . ' · ' : '') . $trip->title . ' (작성 ' . $pl->author . ')',
-				'reminders'   => [30],
-			];
-			if ($pl->place)
+			$res = http_json('https://kapi.kakao.com/v2/api/calendar/events?' . http_build_query([
+				'calendar_id' => 'primary', 'from' => gmdate('Y-m-d\TH:i:s\Z', $from), 'to' => gmdate('Y-m-d\TH:i:s\Z', min($from + 30 * 86400, $last)), 'limit' => 1000,
+			]), null, $auth);
+			if (!isset($res['events']))
 			{
-				$event['location'] = ['name' => mb_substr($pl->place, 0, 100)];
-				if ($pl->lat !== null && $pl->lng !== null) $event['location'] += ['latitude' => (float) $pl->lat, 'longitude' => (float) $pl->lng];
+				$why = $more($res);
+				$fail('카카오톡 캘린더의 일정을 불러오지 못했어요.' . $why . $hint($why));
 			}
+			$existing = array_merge($existing, $res['events']);
+		}
+		$todo = talkcal_sync($wanted, $existing);
+
+		$made = $gone = 0; $why = '';
+		foreach ($todo['create'] as $event)
+		{
 			$res = http_json('https://kapi.kakao.com/v2/api/calendar/create/event', ['event' => json_encode($event, JSON_UNESCAPED_UNICODE)], $auth);
-			if (isset($res['event_id'])) { $sent++; continue; }
-			$why = isset($res['msg']) ? " ({$res['code']}) {$res['msg']}" : ' (카카오에서 응답이 없어요)';
+			if (isset($res['event_id'])) { $made++; continue; }
+			$why = $more($res);
 			break; // the same reason would stop the rest too
 		}
-		if (!$sent)
+		if (!$why) foreach ($todo['delete'] as $id) // extra copies of a plan that is already in the calendar
 		{
-			// the console hint only helps when Kakao is complaining about consent / permission, not about the data
-			$hint = preg_match('/scope|permission|consent|authoriz|동의|권한/i', $why) ? ' 카카오 개발자 콘솔의 톡캘린더 동의항목과 사용 권한(앱 멤버만 가능)을 확인해 주세요.' : '';
-			$fail('카카오톡 캘린더에 넣지 못했어요.' . $why . $hint);
+			$res = http_json('https://kapi.kakao.com/v2/api/calendar/delete/event?' . http_build_query(['event_id' => $id]), null, $auth, 'DELETE');
+			if (isset($res['event_id'])) { $gone++; continue; }
+			$why = $more($res);
+			break;
 		}
-		$this->session->set_flashdata($why ? 'err' : 'ok', "카카오톡 캘린더에 일정 {$sent}개를 넣었어요." . ($why ? " 나머지는 넣지 못했어요.$why" : ' 톡캘린더나 위젯에서 확인해 보세요.'));
+		$summary = "새로 {$made}개 넣고, 이미 있는 {$todo['kept']}개는 그대로 두고, 중복 {$gone}개는 지웠어요.";
+		if ($why && !$made && !$gone) $fail('카카오톡 캘린더에 넣지 못했어요.' . $why . $hint($why));
+		$this->session->set_flashdata($why ? 'err' : 'ok', '카카오톡 캘린더: ' . $summary . ($why ? ' 일부는 처리하지 못했어요.' . $why : ' 톡캘린더나 위젯에서 확인해 보세요.'));
 		redirect($back);
 	}
 

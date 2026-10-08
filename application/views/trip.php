@@ -204,9 +204,10 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 				<a class="btn btn-soft" id="icsLink" href="<?= site_url("trip/$trip->id/calendar") ?>" download="tripmate-<?= (int) $trip->id ?>.ics">📅 캘린더에 넣기</a>
 				<span class="muted">고른 여행지의 일정을 내 캘린더로 받아요. 30분 전에 알려 줘요.</span>
 			</p>
-			<?= form_open("trip/$trip->id/talkcal", ['class' => 'tc', 'id' => 'talkcalForm', 'onsubmit' => "return confirm('고른 여행지의 일정을 카카오톡 캘린더에 넣어요. 이미 넣은 일정을 또 넣으면 중복으로 생겨요. 계속할까요?')"]) ?>
+			<?= form_open("trip/$trip->id/talkcal", ['class' => 'tc', 'id' => 'talkcalForm', 'onsubmit' => "return confirm('고른 여행지의 일정을 카카오톡 캘린더와 맞춰요. 이미 들어 있는 일정은 그대로 두고, 같은 일정이 여러 개면 하나만 남기고 지워요. 계속할까요?')"]) ?>
 				<input type="hidden" name="dest" value="all">
 				<button class="btn btn-kakao sm">💬 카카오톡 캘린더에 넣기</button>
+				<span class="muted">이미 넣은 일정은 건너뛰고, 중복은 하나만 남겨요.</span>
 			</form>
 		<?php endif ?>
 		<?php if ($mapped && $js_key): ?>

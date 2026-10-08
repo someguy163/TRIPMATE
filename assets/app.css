@@ -338,7 +338,7 @@ dialog.dlg::backdrop { background:rgba(10,20,26,.5); }
 .ics { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 16px; }
 .dlg-foot { margin-top:8px; }
 
-.tc { margin:0 0 16px; }
+.tc { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 16px; }
 
 /* time of a plan: hour + minute dropdowns, minutes in 5-minute steps */
 .plan-form .tsel { grid-column:1 / -1; }
