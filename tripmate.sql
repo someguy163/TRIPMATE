@@ -9,7 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
   nickname    VARCHAR(100) NOT NULL,
   profile_img VARCHAR(500) NULL,
   is_admin    TINYINT(1) NOT NULL DEFAULT 0
-);
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS trips (
   id          INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS trips (
   owner_id    INT UNSIGNED NOT NULL,
   chosen_place_id INT UNSIGNED NULL, -- 방장이 확정한 여행지
   FOREIGN KEY (owner_id) REFERENCES users(id)
-);
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS trip_members (
   trip_id INT UNSIGNED NOT NULL,
@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS trip_members (
   PRIMARY KEY (trip_id, user_id),
   FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 여행지 후보
 CREATE TABLE IF NOT EXISTS places (
@@ -42,7 +42,7 @@ CREATE TABLE IF NOT EXISTS places (
   added_by INT UNSIGNED NOT NULL,
   FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
   FOREIGN KEY (added_by) REFERENCES users(id)
-);
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS votes (
   place_id INT UNSIGNED NOT NULL,
@@ -50,7 +50,7 @@ CREATE TABLE IF NOT EXISTS votes (
   PRIMARY KEY (place_id, user_id),
   FOREIGN KEY (place_id) REFERENCES places(id) ON DELETE CASCADE,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-);
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- 일정
 CREATE TABLE IF NOT EXISTS plans (
@@ -67,4 +67,4 @@ CREATE TABLE IF NOT EXISTS plans (
   added_by INT UNSIGNED NOT NULL,
   FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
   FOREIGN KEY (added_by) REFERENCES users(id)
-);
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

@@ -120,7 +120,7 @@ system/          CodeIgniter 본체
 
 1. **호스팅 점검**: 후보 호스팅에 `deploy/hostcheck.php` 하나만 올려서 열어 봅니다. **서버에서 카카오로 연결**되는 줄이 모두 ✔ 이어야 합니다. 점검이 끝나면 지웁니다.
 2. **DB**: 호스팅 컨트롤 패널에서 MySQL DB 를 만들고, phpMyAdmin 에서 그 DB 를 연 뒤 `tripmate.sql` 을 **가져오기**합니다. (DB 이름, 사용자, 비밀번호, 호스트를 메모해 둡니다)
-3. **파일 올리기**: `index.php`, `.htaccess`, `application/`, `assets/`, `system/` 을 웹 폴더(`htdocs`)에 올립니다. `tripmate.sql`, `deploy/`, `.git` 은 올리지 않습니다.
+3. **파일 올리기**: 이 저장소는 `main` 에 푸시하면 GitHub Actions(`.github/workflows/deploy.yml`)가 FTP 로 자동 배포합니다. 수동으로는 `index.php`, `.htaccess`, `application/`, `assets/`, `system/` 을 웹 폴더(`htdocs`)에 올립니다. `tripmate.sql`, `deploy/`, `.git` 은 올리지 않습니다. 배포에 필요한 비밀 값(`FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`)은 GitHub 저장소의 Settings > Secrets and variables > Actions 에 등록합니다. **DB 표 구조가 바뀌면 자동 반영되지 않으니** 서버 phpMyAdmin 에서 변경 SQL 을 직접 실행합니다.
 4. **설정 파일 만들기** (서버에서 직접, 양식 파일 이름을 바꾸고 값을 채웁니다)
    - `application/config/database.example.php` → `database.php` : 2번에서 메모한 DB 정보
    - `application/config/kakao.example.php` → `kakao.php` : 카카오 키들과 관리자 번호

@@ -6,14 +6,27 @@
 #        FTP_SERVER    InfinityFree 계정 화면의 FTP 호스트 이름
 #        FTP_USERNAME  같은 화면의 FTP 사용자 이름 (if0_숫자 형태)
 #        FTP_PASSWORD  같은 화면의 FTP 비밀번호 (이 값은 GitHub 의 비밀 저장소에만 입력하고 어디에도 붙여 넣지 않는다)
-#   2) 저장소 > Actions 탭 > "호스팅에 배포" > "Run workflow" 를 누른다
+#   2) main 브랜치에 푸시하면 자동으로 배포된다. (직접 하려면 Actions 탭 > "호스팅에 배포" > "Run workflow")
 #
 # 비밀 설정 파일(kakao.php, database.php, site.php)은 저장소에 없으므로 올라가지도, 지워지지도 않는다.
-# 처음에는 수동 실행만 되게 해 두었다. 자동으로 하려면 아래 on: 에 push 를 추가한다.
+# DB 표 구조가 바뀌는 변경은 자동으로 반영되지 않는다. 서버 phpMyAdmin 에서 변경 SQL 을 직접 실행해야 한다.
 name: 호스팅에 배포
 
 on:
+  push:
+    branches: [main]
+    # 서버 코드에 영향이 없는 변경만 있는 푸시는 배포하지 않는다
+    paths-ignore:
+      - 'README.md'
+      - 'tripmate.sql'
+      - 'deploy/**'
+      - '.gitignore'
   workflow_dispatch:
+
+# 푸시가 연달아 와도 배포가 동시에 돌지 않게 한다 (FTP 가 서로 엉키지 않도록 줄 세움)
+concurrency:
+  group: deploy
+  cancel-in-progress: false
 
 jobs:
   deploy:
