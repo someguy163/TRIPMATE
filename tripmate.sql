@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS votes (
 CREATE TABLE IF NOT EXISTS plans (
   id       INT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   trip_id  INT UNSIGNED NOT NULL,
+  dest_id  INT UNSIGNED NULL,      -- 어느 여행지 후보의 일정인가 (앱이 항상 채운다. 후보를 지우면 그 일정도 함께 지운다)
   day      DATE NOT NULL,
   at_time  TIME NULL,              -- 시작 시간
   end_time TIME NULL,              -- 종료 시간
@@ -66,5 +67,6 @@ CREATE TABLE IF NOT EXISTS plans (
   done     TINYINT(1) NOT NULL DEFAULT 0,
   added_by INT UNSIGNED NOT NULL,
   FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
+  FOREIGN KEY (dest_id) REFERENCES places(id) ON DELETE SET NULL,
   FOREIGN KEY (added_by) REFERENCES users(id)
 ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

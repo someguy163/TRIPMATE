@@ -12,8 +12,13 @@ $chosen = null;
 foreach ($places as $p) if ($p->id == $trip->chosen_place_id) $chosen = $p;
 $nights = $trip->start_date ? (int) round((strtotime($trip->end_date) - strtotime($trip->start_date)) / 86400) : 0;
 $md = function ($d) use ($week) { return date('n월 j일', strtotime($d)) . '(' . $week[date('w', strtotime($d))] . ')'; };
+// plans per candidate destination
+$destName = []; $destCount = [];
+foreach ($places as $p) { $destName[(int) $p->id] = $p->name; $destCount[(int) $p->id] = 0; }
+foreach ($plans as $pl) if (isset($destCount[(int) $pl->dest_id])) $destCount[(int) $pl->dest_id]++;
 $mapped = []; // plans that have coordinates, in time order; the day number picks the line colour
 foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = [
+	'dest' => isset($destName[(int) $pl->dest_id]) ? (int) $pl->dest_id : 0,
 	'day' => $pl->day, 'dn' => (int) round((strtotime($pl->day) - $base) / 86400) + 1, 'done' => (int) $pl->done,
 	'start' => $pl->at_time ? substr($pl->at_time, 0, 5) : '', 'end' => $pl->end_time ? substr($pl->end_time, 0, 5) : '',
 	'title' => $pl->title, 'place' => (string) $pl->place, 'lat' => (float) $pl->lat, 'lng' => (float) $pl->lng,
@@ -99,17 +104,17 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 				<div class="ticket-body">
 					<h3><?= html_escape($p->name) ?><?= $isc ? '<span class="badge fixed">확정</span>' : ($lead ? '<span class="badge">1위</span>' : '') ?></h3>
 					<?php if ($p->memo !== ''): ?><p class="addr"><?= html_escape($p->memo) ?></p><?php endif ?>
-					<p class="by">추가한 친구 <?= html_escape($p->nickname) ?>
+					<p class="by who"><?= avatar($p->nickname, $p->profile_img) ?>추가한 친구 <b><?= html_escape($p->nickname) ?></b>
 						<?php if ($p->url): ?><a href="<?= html_escape($p->url) ?>" target="_blank" rel="noopener">카카오맵에서 보기</a><?php endif ?>
 					</p>
 					<div class="bar" role="img" aria-label="<?= $n ?>명 중 <?= (int) $p->votes ?>명 선택"><i style="width:<?= $pct ?>%"></i></div>
 					<div class="acts">
-						<button type="button" class="btn btn-soft" data-plan="<?= html_escape($p->name) ?>" data-lat="<?= $p->lat ?>" data-lng="<?= $p->lng ?>">일정에 넣기</button>
+						<button type="button" class="btn btn-soft" data-plan="<?= html_escape($p->name) ?>" data-dest="<?= (int) $p->id ?>" data-lat="<?= $p->lat ?>" data-lng="<?= $p->lng ?>">일정에 넣기</button>
 						<?php if ($owner): ?>
 							<?= form_open("place/$p->id/choose") ?><button class="btn btn-soft<?= $isc ? ' on' : '' ?>"><?= $isc ? '확정 취소' : '여기로 확정' ?></button></form>
 						<?php endif ?>
 						<?php if ($owner || $p->added_by == $me): ?>
-							<?= form_open("place/$p->id/delete", ['onsubmit' => "return confirm('이 후보를 삭제할까요?')"]) ?><button class="btn btn-quiet">삭제</button></form>
+							<?= form_open("place/$p->id/delete", ['onsubmit' => "return confirm('" . ($destCount[(int) $p->id] ? "이 후보의 일정 {$destCount[(int) $p->id]}개도 함께 지워져요. " : '') . "이 후보를 삭제할까요?')"]) ?><button class="btn btn-quiet">삭제</button></form>
 						<?php endif ?>
 					</div>
 				</div>
@@ -135,6 +140,14 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 
 	<section id="plans">
 		<h2>일정</h2>
+		<?php if ($places): // pick a destination to see only its plans ?>
+			<div class="dests" role="group" aria-label="여행지별로 보기">
+				<button type="button" class="dest" data-dest="all" aria-pressed="true">전체<small><?= count($plans) ?></small></button>
+				<?php foreach ($places as $p): ?>
+					<button type="button" class="dest" data-dest="<?= (int) $p->id ?>" aria-pressed="false"><?= html_escape($p->name) ?><?= $chosen && $chosen->id == $p->id ? '<span class="fix">확정</span>' : '' ?><small><?= $destCount[(int) $p->id] ?></small></button>
+				<?php endforeach ?>
+			</div>
+		<?php endif ?>
 		<?php if ($mapped && $js_key): ?>
 			<div class="mapbox">
 				<div id="maploading" class="maploading" role="status"><span class="spin"></span>지도를 불러오는 중…</div>
@@ -146,7 +159,7 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 		<?php elseif ($mapped && $owner): ?>
 			<p class="empty" style="margin-bottom:16px">지도로 보려면 kakao.php 의 kakao_js_key 에 카카오 JavaScript 키를 넣어 주세요.</p>
 		<?php endif ?>
-		<?php if (!$plans): ?><p class="empty">아직 일정이 없어요. 아래에서 첫 일정을 추가해 보세요.</p><?php endif ?>
+		<?php if (!$plans): ?><p class="empty"><?= $places ? '아직 일정이 없어요. 아래에서 첫 일정을 추가해 보세요.' : '일정은 여행지마다 따로 만들어요. 먼저 ‘여행지 후보’ 탭에서 후보를 추가해 주세요.' ?></p><?php endif ?>
 		<?php $day = null; foreach ($plans as $pl):
 			if ($pl->day !== $day):
 				if ($day !== null) echo '</ol></div>';
@@ -159,7 +172,7 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 					</div>
 					<ol class="stops">
 			<?php endif ?>
-				<li class="stop<?= $pl->done ? ' done' : '' ?>" data-start="<?= $pl->day . 'T' . ($pl->at_time ? substr($pl->at_time, 0, 5) : '00:00') ?>" data-end="<?= $pl->end_time ? $pl->day . 'T' . substr($pl->end_time, 0, 5) : '' ?>" data-timed="<?= $pl->at_time ? 1 : 0 ?>" data-done="<?= (int) $pl->done ?>">
+				<li class="stop<?= $pl->done ? ' done' : '' ?>" data-start="<?= $pl->day . 'T' . ($pl->at_time ? substr($pl->at_time, 0, 5) : '00:00') ?>" data-end="<?= $pl->end_time ? $pl->day . 'T' . substr($pl->end_time, 0, 5) : '' ?>" data-timed="<?= $pl->at_time ? 1 : 0 ?>" data-done="<?= (int) $pl->done ?>" data-dest="<?= isset($destName[(int) $pl->dest_id]) ? (int) $pl->dest_id : 0 ?>">
 					<?= form_open("plan/$pl->id/done", ['class' => 'tick']) ?>
 						<button class="dot" aria-pressed="<?= $pl->done ? 'true' : 'false' ?>" aria-label="<?= $pl->done ? '완료 취소' : '완료로 표시' ?>"><i></i></button>
 					</form>
@@ -167,19 +180,31 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 					<span class="body">
 						<span class="what"><?= html_escape($pl->title) ?></span>
 						<?php if ($pl->place): ?><small class="where">📍 <?= html_escape($pl->place) ?></small><?php endif ?>
+						<?php if (isset($destName[(int) $pl->dest_id])): ?><small class="tag"><?= html_escape($destName[(int) $pl->dest_id]) ?></small><?php endif ?>
+						<small class="who"><?= avatar($pl->author, $pl->author_img) ?>작성 <b><?= html_escape($pl->author) ?></b></small>
 					</span>
 					<?php if (!empty($is_admin) || $pl->added_by == $me): // only the writer (or an admin) sees the edit button ?>
 						<button type="button" class="pencil" aria-label="일정 수정" data-edit-plan="<?= html_escape(json_encode([
-							'id' => (int) $pl->id, 'day' => $pl->day, 'start' => substr((string) $pl->at_time, 0, 5), 'end' => substr((string) $pl->end_time, 0, 5),
+							'id' => (int) $pl->id, 'dest' => isset($destName[(int) $pl->dest_id]) ? (int) $pl->dest_id : 0, 'day' => $pl->day, 'start' => substr((string) $pl->at_time, 0, 5), 'end' => substr((string) $pl->end_time, 0, 5),
 							'title' => $pl->title, 'place' => (string) $pl->place, 'lat' => $pl->lat, 'lng' => $pl->lng,
 						], JSON_UNESCAPED_UNICODE)) ?>">✎</button>
 					<?php endif ?>
-					<?= form_open("plan/$pl->id/delete") ?><button class="x" aria-label="일정 삭제">✕</button></form>
+					<?php if ($owner || !empty($is_admin) || $pl->added_by == $me): // writer, trip owner or admin ?>
+						<?= form_open("plan/$pl->id/delete") ?><button class="x" aria-label="일정 삭제">✕</button></form>
+					<?php endif ?>
 				</li>
 		<?php endforeach; if ($plans) echo '</ol></div>'; ?>
+		<p class="empty" id="destEmpty" hidden>이 여행지의 일정이 아직 없어요. 아래에서 추가해 보세요.</p>
 
+		<div<?= $places ? '' : ' hidden' ?>>
 		<?= form_open("trip/$trip->id/plan", ['class' => 'plan-form']) ?>
 			<p class="edit-note wide" id="editNote" hidden>일정을 수정하는 중이에요</p>
+			<label class="f wide">어느 여행지 일정이에요?
+				<select name="dest_id" required>
+					<option value="" disabled selected>여행지를 골라 주세요</option>
+					<?php foreach ($places as $p): ?><option value="<?= (int) $p->id ?>"><?= html_escape($p->name) ?></option><?php endforeach ?>
+				</select>
+			</label>
 			<label class="f wide">날짜<input type="date" name="day" value="<?= html_escape($last) ?>"<?= $trip->start_date ? ' min="' . $trip->start_date . '" max="' . $trip->end_date . '"' : '' ?> required></label>
 			<label class="f">몇 시부터<input type="time" name="at_time" required></label>
 			<label class="f">몇 시까지<input type="time" name="end_time" required></label>
@@ -198,6 +223,7 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 			<p class="muted wide">검색해서 고르면 위 지도에 표시돼요.</p>
 			<button class="btn btn-primary">일정 추가</button>
 		</form>
+		</div>
 	</section>
 </div>
 
@@ -217,9 +243,52 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 
 <?php if ($mapped && $js_key): ?><script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=<?= rawurlencode($js_key) ?>&autoload=false"></script><?php endif ?>
 <script>
-// every plan that has a place, on one Kakao map: pins numbered in time order, one coloured line per day
+// every plan that has a place, on one Kakao map: pins numbered in time order, one coloured line per day.
+// Only the plans of the selected destination are drawn.
 const MAP_PLANS = <?= json_encode($mapped, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_UNESCAPED_UNICODE) ?>;
-let kmap = null, kfit = () => {};
+const CHOSEN = <?= $chosen ? (int) $chosen->id : 0 ?>;   // the confirmed destination (0 = none yet)
+const TRIP_KEY = 'dest-<?= (int) $trip->id ?>';           // remembers the selected destination across the reloads that saving causes
+let kmap = null, kfit = () => {}, kinfo = null, klayers = [], curDest = 'all';
+// does the view v ('all' or a destination id) show a plan of destination d? (both as strings)
+const showsDest = (v, d) => v === 'all' || d === v;
+
+function renderPins() {
+	if (!kmap) return;
+	klayers.forEach(l => l.setMap(null)); klayers = [];
+	if (kinfo) kinfo.close();
+	const list = MAP_PLANS.filter(p => showsDest(curDest, String(p.dest)));
+	if (!list.length) return;
+	const css = getComputedStyle(document.documentElement), byDay = {}, bounds = new kakao.maps.LatLngBounds();
+	const spots = {}; // plans at the same spot share one pin, so a place used twice (airport, hotel) is not hidden
+	list.forEach((p, i) => {
+		const pos = new kakao.maps.LatLng(p.lat, p.lng), color = css.getPropertyValue('--l' + ((p.dn - 1) % 5)).trim();
+		bounds.extend(pos);
+		(byDay[p.day] = byDay[p.day] || { color, path: [] }).path.push(pos);
+		(spots[p.lat + ',' + p.lng] = spots[p.lat + ',' + p.lng] || { pos, color, items: [] }).items.push({ p, n: i + 1 });
+	});
+	Object.values(spots).forEach(({ pos, color, items }) => {
+		const pin = document.createElement('button');
+		pin.type = 'button'; pin.className = 'pin' + (items.every(x => x.p.done) ? ' done' : ''); pin.style.background = color;
+		pin.textContent = items.map(x => x.n).join('/');
+		pin.setAttribute('aria-label', items.map(x => `${x.n}번, ${x.p.title}`).join(', '));
+		pin.onclick = () => {
+			const el = document.createElement('div');
+			el.className = 'iw';
+			items.forEach(({ p, n }) => {
+				const t = document.createElement('b'), s = document.createElement('div');
+				t.textContent = `${n}. ${p.title}`;
+				s.textContent = [p.start && (p.end ? p.start + '~' + p.end : p.start), p.place].filter(Boolean).join('  ');
+				el.append(t, s);
+			});
+			kinfo.close(); kinfo.setContent(el); kinfo.setPosition(pos); kinfo.open(kmap);
+		};
+		klayers.push(new kakao.maps.CustomOverlay({ map: kmap, position: pos, content: pin, yAnchor: 0.5, zIndex: 3 }));
+	});
+	Object.values(byDay).forEach(d => { if (d.path.length > 1) klayers.push(new kakao.maps.Polyline({ map: kmap, path: d.path, strokeWeight: 4, strokeColor: d.color, strokeOpacity: 0.85 })); });
+	kfit = () => { if (list.length > 1) kmap.setBounds(bounds, 40, 40, 40, 40); else { kmap.setLevel(4); kmap.setCenter(new kakao.maps.LatLng(list[0].lat, list[0].lng)); } };
+	kfit();
+}
+
 function drawMap() {
 	const box = document.getElementById('map'), loading = document.getElementById('maploading');
 	const loaded = () => { if (loading) loading.hidden = true; };
@@ -230,40 +299,11 @@ function drawMap() {
 	}
 	kakao.maps.load(() => {
 		if (kmap) { kmap.relayout(); kfit(); return; } // the panel was hidden when first drawn (mobile tab)
-		const css = getComputedStyle(document.documentElement), byDay = {}, bounds = new kakao.maps.LatLngBounds();
-		const first = new kakao.maps.LatLng(MAP_PLANS[0].lat, MAP_PLANS[0].lng);
-		kmap = new kakao.maps.Map(box, { center: first, level: 7 });
+		kmap = new kakao.maps.Map(box, { center: new kakao.maps.LatLng(MAP_PLANS[0].lat, MAP_PLANS[0].lng), level: 7 });
 		kakao.maps.event.addListener(kmap, 'tilesloaded', loaded);
 		setTimeout(loaded, 8000); // never leave the loader up if that event does not come
-		const info = new kakao.maps.InfoWindow({ removable: true, zIndex: 5 });
-		const spots = {}; // plans at the same spot share one pin, so a place used twice (airport, hotel) is not hidden
-		MAP_PLANS.forEach((p, i) => {
-			const pos = new kakao.maps.LatLng(p.lat, p.lng), color = css.getPropertyValue('--l' + ((p.dn - 1) % 5)).trim();
-			bounds.extend(pos);
-			(byDay[p.day] = byDay[p.day] || { color, path: [] }).path.push(pos);
-			(spots[p.lat + ',' + p.lng] = spots[p.lat + ',' + p.lng] || { pos, color, items: [] }).items.push({ p, n: i + 1 });
-		});
-		Object.values(spots).forEach(({ pos, color, items }) => {
-			const pin = document.createElement('button');
-			pin.type = 'button'; pin.className = 'pin' + (items.every(x => x.p.done) ? ' done' : ''); pin.style.background = color;
-			pin.textContent = items.map(x => x.n).join('/');
-			pin.setAttribute('aria-label', items.map(x => `${x.n}번, ${x.p.title}`).join(', '));
-			pin.onclick = () => {
-				const el = document.createElement('div');
-				el.className = 'iw';
-				items.forEach(({ p, n }) => {
-					const t = document.createElement('b'), s = document.createElement('div');
-					t.textContent = `${n}. ${p.title}`;
-					s.textContent = [p.start && (p.end ? p.start + '~' + p.end : p.start), p.place].filter(Boolean).join('  ');
-					el.append(t, s);
-				});
-				info.close(); info.setContent(el); info.setPosition(pos); info.open(kmap);
-			};
-			new kakao.maps.CustomOverlay({ map: kmap, position: pos, content: pin, yAnchor: 0.5, zIndex: 3 });
-		});
-		Object.values(byDay).forEach(d => { if (d.path.length > 1) new kakao.maps.Polyline({ map: kmap, path: d.path, strokeWeight: 4, strokeColor: d.color, strokeOpacity: 0.85 }); });
-		kfit = () => { if (MAP_PLANS.length > 1) kmap.setBounds(bounds, 40, 40, 40, 40); else { kmap.setLevel(4); kmap.setCenter(first); } };
-		kfit();
+		kinfo = new kakao.maps.InfoWindow({ removable: true, zIndex: 5 });
+		renderPins();
 	});
 }
 
@@ -291,12 +331,15 @@ function refreshNow() {
 	stops.forEach(s => s.classList.remove('now', 'late'));
 	document.querySelectorAll('.route').forEach(r => r.classList.toggle('today', r.dataset.day === today));
 
+	// once a destination is confirmed the card follows only its plans: plans of the other candidates
+	// are alternatives, not commitments, so they must not show up as "late"
+	const pool = stops.filter(s => !CHOSEN || s.dataset.dest === String(CHOSEN));
 	// now: unchecked plan whose start..end window holds the current time (or an untimed plan of today)
-	const live = stops.filter(s => notDone(s) && timed(s) && from(s) <= now && now < to(s)).pop()
-		|| stops.find(s => notDone(s) && !timed(s) && day(s) === today);
+	const live = pool.filter(s => notDone(s) && timed(s) && from(s) <= now && now < to(s)).pop()
+		|| pool.find(s => notDone(s) && !timed(s) && day(s) === today);
 	// late: unchecked and already over (its window ended, or it belongs to an earlier day)
-	const late = stops.filter(s => notDone(s) && s !== live && (timed(s) ? to(s) <= now : day(s) < today));
-	const next = stops.find(s => notDone(s) && (timed(s) ? from(s) > now : day(s) > today));
+	const late = pool.filter(s => notDone(s) && s !== live && (timed(s) ? to(s) <= now : day(s) < today));
+	const next = pool.find(s => notDone(s) && (timed(s) ? from(s) > now : day(s) > today));
 	if (live) live.classList.add('now');
 	late.forEach(s => s.classList.add('late'));
 
@@ -343,6 +386,7 @@ document.querySelectorAll('[data-plan]').forEach(b => b.onclick = () => {
 	const f = document.querySelector('.plan-form'), e = f.elements;
 	e.title.value = e.place.value = b.dataset.plan;
 	e.lat.value = b.dataset.lat; e.lng.value = b.dataset.lng;
+	e.dest_id.value = b.dataset.dest; // the plan belongs to the candidate it was made from
 	f.scrollIntoView({ block: 'center', behavior: 'smooth' });
 	(e.day.value ? e.at_time : e.day).focus({ preventScroll: true });
 });
@@ -410,7 +454,7 @@ planSubmit.after(cancelPlanEdit);
 cancelPlanEdit.onclick = () => {
 	planForm.setAttribute('action', addAction); planForm.reset();
 	planSubmit.textContent = '일정 추가'; cancelPlanEdit.hidden = true; editNote.hidden = true; planForm.classList.remove('editing');
-	syncTimes();
+	syncTimes(); syncDestSelect();
 };
 document.querySelectorAll('[data-edit-plan]').forEach(b => b.onclick = () => {
 	const p = JSON.parse(b.dataset.editPlan);
@@ -418,6 +462,7 @@ document.querySelectorAll('[data-edit-plan]').forEach(b => b.onclick = () => {
 	planForm.setAttribute('action', '<?= site_url('plan') ?>/' + p.id + '/edit');
 	pf.day.value = p.day; pf.at_time.value = p.start; pf.end_time.value = p.end; pf.title.value = p.title;
 	pf.place.value = p.place; pf.lat.value = p.lat === null ? '' : p.lat; pf.lng.value = p.lng === null ? '' : p.lng;
+	pf.dest_id.value = p.dest ? String(p.dest) : '';
 	planSubmit.textContent = '수정 저장'; cancelPlanEdit.hidden = false; editNote.hidden = false; planForm.classList.add('editing');
 	syncTimes();
 	planForm.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -432,6 +477,34 @@ if (tripEdit) {
 	document.getElementById('editTripCancel').onclick = () => { tripEdit.reset(); tripEdit.hidden = true; };
 	te.start_date.onchange = e => { te.end_date.min = e.target.value; if (!te.end_date.value || te.end_date.value < e.target.value) te.end_date.value = e.target.value; };
 	te.end_date.min = te.start_date.value;
+}
+
+// pick a destination: the plan list and the map show only its plans
+const chips = [...document.querySelectorAll('.dest')], destEmpty = document.getElementById('destEmpty');
+// the plan form starts on the destination being viewed, so a new plan lands where the person is looking
+function syncDestSelect() { if (!planForm.classList.contains('editing')) pf.dest_id.value = curDest !== 'all' ? curDest : (CHOSEN ? String(CHOSEN) : ''); }
+function applyDest(v) {
+	curDest = v;
+	try { sessionStorage.setItem(TRIP_KEY, v); } catch (_) {}
+	chips.forEach(c => c.setAttribute('aria-pressed', String(c.dataset.dest === v)));
+	stops.forEach(s => { s.hidden = !showsDest(v, s.dataset.dest); });
+	document.querySelectorAll('.route').forEach(r => { r.hidden = !r.querySelector('.stop:not([hidden])'); });
+	if (destEmpty) {
+		destEmpty.hidden = v === 'all' || !!document.querySelector('.stop:not([hidden])');
+	}
+	syncDestSelect();
+	renderPins();
+}
+if (chips.length) {
+	chips.forEach(c => c.onclick = () => applyDest(c.dataset.dest));
+	let first = CHOSEN ? String(CHOSEN) : 'all';   // a confirmed destination opens on its own plans
+	try { const saved = sessionStorage.getItem(TRIP_KEY); if (saved) first = saved; } catch (_) {}
+	applyDest(chips.some(c => c.dataset.dest === first) ? first : 'all');
+	// after saving a plan the page reloads: stay where the new plan is visible
+	planForm.addEventListener('submit', () => {
+		const d = pf.dest_id.value;
+		if (d && !showsDest(curDest, d)) { try { sessionStorage.setItem(TRIP_KEY, d); } catch (_) {} }
+	});
 }
 </script>
 

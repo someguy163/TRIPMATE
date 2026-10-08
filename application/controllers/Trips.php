@@ -80,15 +80,16 @@ class Trips extends CI_Controller {
 			->join('users u', 'u.id = m.user_id')->where('m.trip_id', $id)
 			->order_by('u.id = ' . (int) $trip->owner_id, 'DESC', FALSE)->order_by('u.id')->get()->result();
 		$places = $this->db->query(
-			'SELECT p.*, u.nickname, COUNT(v.user_id) AS votes, MAX(v.user_id = ?) AS mine
+			'SELECT p.*, u.nickname, u.profile_img, COUNT(v.user_id) AS votes, MAX(v.user_id = ?) AS mine
 			 FROM places p JOIN users u ON u.id = p.added_by
 			 LEFT JOIN votes v ON v.place_id = p.id
 			 WHERE p.trip_id = ? GROUP BY p.id ORDER BY votes DESC, p.id',
 			[$this->uid, $id]
 		)->result();
 		// untimed plans go last within their day
-		$plans = $this->db->order_by('day')->order_by('at_time IS NULL', '', FALSE)->order_by('at_time')->order_by('id')
-			->get_where('plans', ['trip_id' => $id])->result();
+		$plans = $this->db->select('p.*, u.nickname AS author, u.profile_img AS author_img')->from('plans p')
+			->join('users u', 'u.id = p.added_by')->where('p.trip_id', $id)
+			->order_by('p.day')->order_by('p.at_time IS NULL', '', FALSE)->order_by('p.at_time')->order_by('p.id')->get()->result();
 		$me = $this->uid;
 		$view_only = !in_array($this->uid, array_column($members, 'id')); // only possible for an admin
 		$this->config->load('kakao');
@@ -171,6 +172,7 @@ class Trips extends CI_Controller {
 			show_error('추가한 친구나 방장만 지울 수 있어요.', 403);
 		}
 		$this->db->update('trips', ['chosen_place_id' => null], ['chosen_place_id' => $place_id]);
+		$this->db->delete('plans', ['dest_id' => $place_id]); // a plan only exists for its destination
 		$this->db->delete('places', ['id' => $place_id]);
 		redirect("trip/$place->trip_id");
 	}
@@ -295,7 +297,15 @@ class Trips extends CI_Controller {
 
 		$place = mb_substr(trim((string) $this->input->post('place')), 0, 100);
 		list($lat, $lng) = $place === '' ? [null, null] : $this->_coords($this->input->post('lat'), $this->input->post('lng'));
+
+		// every plan belongs to one candidate destination, and it must be a candidate of THIS trip
+		$dest = (int) $this->input->post('dest_id');
+		if (!$dest || !$this->db->get_where('places', ['id' => $dest, 'trip_id' => $trip->id])->num_rows())
+		{
+			$this->_fail('어느 여행지의 일정인지 골라 주세요. 후보가 없다면 먼저 여행지 후보를 추가해야 해요.', $back);
+		}
 		return [
+			'dest_id'  => $dest,
 			'day'      => $day,
 			'at_time'  => $from,
 			'end_time' => $to,
@@ -320,7 +330,13 @@ class Trips extends CI_Controller {
 	{
 		$plan = $this->db->get_where('plans', ['id' => $plan_id])->row();
 		if (!$plan) show_404();
-		$this->_member($plan->trip_id);
+		$this->_login();
+		if (!$this->admin) // the writer, the trip owner or an admin
+		{
+			$this->_member($plan->trip_id);
+			$owner_id = $this->db->get_where('trips', ['id' => $plan->trip_id])->row()->owner_id;
+			if ($plan->added_by != $this->uid && $owner_id != $this->uid) show_error('일정을 쓴 친구나 방장만 지울 수 있어요.', 403);
+		}
 		$this->db->delete('plans', ['id' => $plan_id]);
 		redirect("trip/$plan->trip_id#plans");
 	}
