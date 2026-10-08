@@ -156,7 +156,7 @@ form { margin:0; }
 /* admin looking at a group they are not in: read only (the server refuses writes anyway) */
 .view-only .searchbar, .view-only #results, .view-only .manual, .view-only .plan-form:not(.editing), .view-only .danger,
 .view-only .acts, .view-only [data-copy], .view-only [data-share], .view-only #nc-done, .view-only .invite-first,
-.view-only .inline-add, .view-only .exp-form, .view-only .cform, .view-only .take { display:none !important; }
+.view-only .inline-add, .view-only .exp-form, .view-only .cform, .view-only .take, .view-only .tc { display:none !important; }
 .view-only .dot, .view-only .vote { pointer-events:none; }
 .manual { margin:16px 0 0; }
 .manual summary { cursor:pointer; color:var(--muted); font-size:14px; padding:6px 0; }
@@ -337,3 +337,5 @@ dialog.dlg::backdrop { background:rgba(10,20,26,.5); }
 .pick:has(input:checked) { border-color:var(--sea); background:var(--sea-soft); color:var(--sea); font-weight:600; }
 .ics { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin:0 0 16px; }
 .dlg-foot { margin-top:8px; }
+
+.tc { margin:0 0 16px; }

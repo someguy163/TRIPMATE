@@ -80,3 +80,4 @@ $route['trip/(:num)/expense']         = 'trips/add_expense/$1';
 $route['expense/(:num)/delete']       = 'trips/del_expense/$1';
 $route['trip/(:num)/newlink']         = 'trips/new_invite/$1';
 $route['trip/(:num)/calendar']        = 'trips/calendar/$1';
+$route['trip/(:num)/talkcal']         = 'trips/talkcal/$1';

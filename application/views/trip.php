@@ -204,6 +204,10 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 				<a class="btn btn-soft" id="icsLink" href="<?= site_url("trip/$trip->id/calendar") ?>" download="tripmate-<?= (int) $trip->id ?>.ics">📅 캘린더에 넣기</a>
 				<span class="muted">고른 여행지의 일정을 내 캘린더로 받아요. 30분 전에 알려 줘요.</span>
 			</p>
+			<?= form_open("trip/$trip->id/talkcal", ['class' => 'tc', 'id' => 'talkcalForm', 'onsubmit' => "return confirm('고른 여행지의 일정을 카카오톡 캘린더에 넣어요. 이미 넣은 일정을 또 넣으면 중복으로 생겨요. 계속할까요?')"]) ?>
+				<input type="hidden" name="dest" value="all">
+				<button class="btn btn-kakao sm">💬 카카오톡 캘린더에 넣기</button>
+			</form>
 		<?php endif ?>
 		<?php if ($mapped && $js_key): ?>
 			<div class="mapbox">
@@ -647,7 +651,7 @@ if (tripEdit) {
 // pick a destination: the plan list and the map show only its plans
 const chips = [...document.querySelectorAll('.dest')], destEmpty = document.getElementById('destEmpty');
 const ids = chips.map(c => c.dataset.dest).filter(d => d !== 'all');
-const icsLink = document.getElementById('icsLink'), icsBase = icsLink && icsLink.getAttribute('href');
+const icsLink = document.getElementById('icsLink'), icsBase = icsLink && icsLink.getAttribute('href'), talkForm = document.getElementById('talkcalForm');
 const destView = document.getElementById('destView'), destHint = document.getElementById('destHint');
 // the plan's destination is never typed in: it follows the chip being viewed (or the candidate "일정에 넣기" came from).
 // The visible box is disabled, so the hidden field carries the value; with no destination there is nothing to save yet.
@@ -668,6 +672,7 @@ function applyDest(v) {
 	syncDestSelect();
 	showWeather();
 	if (icsLink) icsLink.href = icsBase + '?dest=' + curDest; // the calendar file follows the destination in view ('all' = everything)
+	if (talkForm) talkForm.dest.value = curDest;               // so does "카카오톡 캘린더에 넣기"
 	renderPins();
 }
 

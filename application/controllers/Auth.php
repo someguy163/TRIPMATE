@@ -14,6 +14,7 @@ class Auth extends CI_Controller {
 	{
 		$state = bin2hex(random_bytes(16));
 		$this->session->set_userdata('oauth_state', $state);
+		$this->session->unset_userdata('talkcal'); // a calendar job that was never finished must not turn this login into one
 		redirect('https://kauth.kakao.com/oauth/authorize?' . http_build_query([
 			'client_id'     => config_item('kakao_rest_key'),
 			'redirect_uri'  => site_url('auth/callback'),
@@ -39,6 +40,13 @@ class Auth extends CI_Controller {
 			'redirect_uri'  => site_url('auth/callback'),
 			'code'          => $code,
 		]));
+		// not a login: the person came back from the extra consent for "카카오톡 캘린더에 넣기"
+		$job = $this->session->userdata('talkcal');
+		if ($job)
+		{
+			$this->session->unset_userdata('talkcal');
+			$this->_talkcal($token, $job);
+		}
 		$me = isset($token['access_token'])
 			? http_json('https://kapi.kakao.com/v2/user/me', null, ['Authorization: Bearer ' . $token['access_token']])
 			: null;
@@ -80,6 +88,64 @@ class Auth extends CI_Controller {
 		$this->session->set_userdata(['uid' => $uid, 'nick' => $nick, 'img' => $img]);
 		$this->session->unset_userdata('next');
 		redirect($next ?: '/');
+	}
+
+	// "카카오톡 캘린더에 넣기", step 2: put the plans chosen in Trips::talkcal into the person's own KakaoTalk calendar
+	// (each with a reminder 30 minutes before). The token is used once here and never stored.
+	private function _talkcal($token, $job)
+	{
+		$uid  = $this->session->userdata('uid');
+		$back = 'trip/' . (int) $job['trip'] . '#plans';
+		$fail = function ($msg) use ($back) { $this->session->set_flashdata('err', $msg); redirect($back); };
+		if (!$uid) redirect('login');
+		if (empty($token['access_token']))
+		{
+			$fail('카카오 인증에 실패했어요. 다시 시도해 주세요.' . (isset($token['error_description']) ? " ({$token['error_description']})" : ''));
+		}
+		$auth = ['Authorization: Bearer ' . $token['access_token']];
+
+		// the Kakao account that agreed must be the one logged in here
+		$me = http_json('https://kapi.kakao.com/v2/user/me', null, $auth);
+		$mine = $this->db->get_where('users', ['id' => $uid])->row();
+		if (empty($me['id']) || !$mine || (string) $me['id'] !== (string) $mine->kakao_id)
+		{
+			$fail('로그인한 카카오 계정과 동의한 계정이 달라요. 같은 계정으로 다시 시도해 주세요.');
+		}
+		if (!$this->db->get_where('trip_members', ['trip_id' => $job['trip'], 'user_id' => $uid])->num_rows()) show_404();
+
+		$trip  = $this->db->get_where('trips', ['id' => $job['trip']])->row();
+		$plans = $this->db->select('p.*, u.nickname AS author, d.name AS dest_name')->from('plans p')->join('users u', 'u.id = p.added_by')
+			->join('places d', 'd.id = p.dest_id', 'left')->where('p.trip_id', $job['trip'])->where_in('p.id', $job['plans'])
+			->order_by('p.day')->order_by('p.at_time')->get()->result();
+		$utc = new DateTimeZone('UTC'); $seoul = new DateTimeZone('Asia/Seoul');
+		$at  = function ($day, $time) use ($utc, $seoul) { return (new DateTime("$day $time", $seoul))->setTimezone($utc)->format('Y-m-d\TH:i:s\Z'); }; // RFC3339, UTC
+
+		$sent = 0; $why = '';
+		foreach ($plans as $pl)
+		{
+			$end = $pl->end_time ?: date('H:i:s', strtotime($pl->at_time) + 3600);
+			$event = [
+				'title'       => mb_substr($pl->title, 0, 50),
+				'time'        => ['start_at' => $at($pl->day, $pl->at_time), 'end_at' => $at($pl->day, $end), 'time_zone' => 'Asia/Seoul', 'all_day' => false, 'lunar' => false],
+				'description' => ($pl->dest_name ? $pl->dest_name . ' · ' : '') . $trip->title . ' (작성 ' . $pl->author . ')',
+				'reminders'   => [30],
+			];
+			if ($pl->place)
+			{
+				$event['location'] = ['name' => mb_substr($pl->place, 0, 100)];
+				if ($pl->lat !== null && $pl->lng !== null) $event['location'] += ['latitude' => (float) $pl->lat, 'longitude' => (float) $pl->lng];
+			}
+			$res = http_json('https://kapi.kakao.com/v2/api/calendar/create/event', ['event' => json_encode($event, JSON_UNESCAPED_UNICODE)], $auth);
+			if (isset($res['event_id'])) { $sent++; continue; }
+			$why = isset($res['msg']) ? " ({$res['code']}) {$res['msg']}" : ' (카카오에서 응답이 없어요)';
+			break; // the same reason would stop the rest too
+		}
+		if (!$sent)
+		{
+			$fail('카카오톡 캘린더에 넣지 못했어요.' . $why . ' 카카오 개발자 콘솔의 톡캘린더 동의항목과 사용 권한(앱 멤버만 가능)을 확인해 주세요.');
+		}
+		$this->session->set_flashdata($why ? 'err' : 'ok', "카카오톡 캘린더에 일정 {$sent}개를 넣었어요." . ($why ? " 나머지는 넣지 못했어요.$why" : ' 톡캘린더나 위젯에서 확인해 보세요.'));
+		redirect($back);
 	}
 
 	public function logout()

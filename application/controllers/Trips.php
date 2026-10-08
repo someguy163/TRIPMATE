@@ -253,12 +253,7 @@ class Trips extends CI_Controller {
 	{
 		$this->_member($trip_id, TRUE);
 		$trip = $this->db->get_where('trips', ['id' => $trip_id])->row();
-		$want = $this->input->get('dest');
-		$dest = $want === 'all' ? 0 : ((int) $want ?: (int) $trip->chosen_place_id);
-		$this->db->select('p.*, u.nickname AS author, d.name AS dest_name')->from('plans p')->join('users u', 'u.id = p.added_by')
-			->join('places d', 'd.id = p.dest_id', 'left')->where('p.trip_id', $trip_id);
-		if ($dest) $this->db->where('p.dest_id', $dest);
-		$plans = $this->db->order_by('p.day')->order_by('p.at_time')->order_by('p.id')->get()->result();
+		$plans = $this->_calendar_plans($trip, $this->input->get('dest'));
 
 		$seoul = new DateTimeZone('Asia/Seoul'); $utc = new DateTimeZone('UTC'); // times are saved as Korean time; calendars get absolute (UTC) times
 		$esc  = function ($t) { return str_replace(['\\', ';', ',', "\r\n", "\n", "\r"], ['\\\\', '\\;', '\\,', '\\n', '\\n', '\\n'], (string) $t); };
@@ -299,6 +294,37 @@ class Trips extends CI_Controller {
 		$this->output->set_content_type('text/calendar')
 			->set_header('Content-Disposition: attachment; filename="tripmate-' . (int) $trip_id . '.ics"')
 			->set_output(implode("\r\n", array_map($fold, $out)) . "\r\n");
+	}
+
+	// the plans a calendar export covers: 'all' everything, an id that destination, nothing: the confirmed one (else everything)
+	private function _calendar_plans($trip, $want)
+	{
+		$dest = $want === 'all' ? 0 : ((int) $want ?: (int) $trip->chosen_place_id);
+		$this->db->select('p.*, u.nickname AS author, d.name AS dest_name')->from('plans p')->join('users u', 'u.id = p.added_by')
+			->join('places d', 'd.id = p.dest_id', 'left')->where('p.trip_id', $trip->id);
+		if ($dest) $this->db->where('p.dest_id', $dest);
+		return $this->db->order_by('p.day')->order_by('p.at_time')->order_by('p.id')->get()->result();
+	}
+
+	// "카카오톡 캘린더에 넣기", step 1: remember which plans to send, then ask Kakao for the extra consent (talk_calendar).
+	// It comes back through Auth::callback (the same redirect URI as the login), which creates the events.
+	public function talkcal($trip_id)
+	{
+		$this->_member($trip_id);
+		$trip = $this->db->get_where('trips', ['id' => $trip_id])->row();
+		$plans = array_filter($this->_calendar_plans($trip, $this->input->post('dest')), function ($p) { return $p->at_time; }); // plans without a time are not sent
+		if (!$plans) $this->_fail('카카오톡 캘린더에 넣을 일정이 없어요.', "trip/$trip_id#plans");
+		if (count($plans) > 50) $this->_fail('한 번에 50개까지만 넣을 수 있어요. 여행지 버튼으로 나눠서 넣어 주세요.', "trip/$trip_id#plans");
+		$this->config->load('kakao');
+		$state = bin2hex(random_bytes(16));
+		$this->session->set_userdata(['oauth_state' => $state, 'talkcal' => ['trip' => (int) $trip_id, 'plans' => array_map('intval', array_column($plans, 'id'))]]);
+		redirect('https://kauth.kakao.com/oauth/authorize?' . http_build_query([
+			'client_id'     => config_item('kakao_rest_key'),
+			'redirect_uri'  => site_url('auth/callback'),
+			'response_type' => 'code',
+			'state'         => $state,
+			'scope'         => 'talk_calendar',
+		]));
 	}
 
 	// notes on plans: any member can write one; the writer, the owner or an admin can remove it
