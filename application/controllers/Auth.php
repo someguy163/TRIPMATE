@@ -117,16 +117,19 @@ class Auth extends CI_Controller {
 		$plans = $this->db->select('p.*, u.nickname AS author, d.name AS dest_name')->from('plans p')->join('users u', 'u.id = p.added_by')
 			->join('places d', 'd.id = p.dest_id', 'left')->where('p.trip_id', $job['trip'])->where_in('p.id', $job['plans'])
 			->order_by('p.day')->order_by('p.at_time')->get()->result();
-		$utc = new DateTimeZone('UTC'); $seoul = new DateTimeZone('Asia/Seoul');
-		$at  = function ($day, $time) use ($utc, $seoul) { return (new DateTime("$day $time", $seoul))->setTimezone($utc)->format('Y-m-d\TH:i:s\Z'); }; // RFC3339, UTC
+		$seoul = new DateTimeZone('Asia/Seoul');
+		$ts  = function ($day, $time) use ($seoul) { return (new DateTime("$day $time", $seoul))->getTimestamp(); };
+		// Kakao wants RFC3339 UTC times in whole 5-minute steps: the start is moved earlier and the end later, so the plan is still covered
+		$rfc = function ($t, $up) { return gmdate('Y-m-d\TH:i:s\Z', ($up ? ceil($t / 300) : floor($t / 300)) * 300); };
 
 		$sent = 0; $why = '';
 		foreach ($plans as $pl)
 		{
-			$end = $pl->end_time ?: date('H:i:s', strtotime($pl->at_time) + 3600);
+			$from = $ts($pl->day, $pl->at_time);
+			$to   = $pl->end_time ? $ts($pl->day, $pl->end_time) : $from + 3600; // no end time: one hour
 			$event = [
 				'title'       => mb_substr($pl->title, 0, 50),
-				'time'        => ['start_at' => $at($pl->day, $pl->at_time), 'end_at' => $at($pl->day, $end), 'time_zone' => 'Asia/Seoul', 'all_day' => false, 'lunar' => false],
+				'time'        => ['start_at' => $rfc($from, false), 'end_at' => $rfc($to, true), 'time_zone' => 'Asia/Seoul', 'all_day' => false, 'lunar' => false],
 				'description' => ($pl->dest_name ? $pl->dest_name . ' · ' : '') . $trip->title . ' (작성 ' . $pl->author . ')',
 				'reminders'   => [30],
 			];
@@ -142,7 +145,9 @@ class Auth extends CI_Controller {
 		}
 		if (!$sent)
 		{
-			$fail('카카오톡 캘린더에 넣지 못했어요.' . $why . ' 카카오 개발자 콘솔의 톡캘린더 동의항목과 사용 권한(앱 멤버만 가능)을 확인해 주세요.');
+			// the console hint only helps when Kakao is complaining about consent / permission, not about the data
+			$hint = preg_match('/scope|permission|consent|authoriz|동의|권한/i', $why) ? ' 카카오 개발자 콘솔의 톡캘린더 동의항목과 사용 권한(앱 멤버만 가능)을 확인해 주세요.' : '';
+			$fail('카카오톡 캘린더에 넣지 못했어요.' . $why . $hint);
 		}
 		$this->session->set_flashdata($why ? 'err' : 'ok', "카카오톡 캘린더에 일정 {$sent}개를 넣었어요." . ($why ? " 나머지는 넣지 못했어요.$why" : ' 톡캘린더나 위젯에서 확인해 보세요.'));
 		redirect($back);

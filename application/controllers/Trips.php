@@ -495,6 +495,8 @@ class Trips extends CI_Controller {
 		$title = trim((string) $this->input->post('title'));
 
 		if (!$day || !$from || !$to || $title === '') $this->_fail('날짜, 시작·종료 시간, 내용을 모두 입력해 주세요.', $back);
+		// whole 5-minute steps only (KakaoTalk's calendar takes nothing finer; the form snaps to them, this guards the rest)
+		if ((int) substr($from, 3, 2) % 5 || (int) substr($to, 3, 2) % 5) $this->_fail('시간은 5분 단위(예: 09:05, 10:30)로 입력해 주세요.', $back);
 		// the trip dates are the limit (older trips without dates stay unrestricted)
 		if ($trip->start_date && ($day < $trip->start_date || $day > $trip->end_date))
 		{

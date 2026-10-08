@@ -295,8 +295,8 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 			</label>
 			<p class="muted wide" id="destHint" hidden>위의 여행지 버튼(전체 옆)을 눌러 어느 여행지의 일정인지 먼저 골라 주세요.</p>
 			<label class="f wide">날짜<input type="date" name="day" value="<?= html_escape($last) ?>"<?= $trip->start_date ? ' min="' . $trip->start_date . '" max="' . $trip->end_date . '"' : '' ?> required></label>
-			<label class="f">몇 시부터<input type="time" name="at_time" required></label>
-			<label class="f">몇 시까지<input type="time" name="end_time" required></label>
+			<label class="f">몇 시부터<input type="time" name="at_time" step="300" required></label>
+			<label class="f">몇 시까지<input type="time" name="end_time" step="300" required></label>
 			<p class="hint" id="timehint" role="alert" hidden></p>
 			<input type="text" name="title" placeholder="무엇을 할까요? (예: 흑돼지 맛집)" maxlength="150" aria-label="일정 내용" required>
 			<div class="f wide">
@@ -537,7 +537,7 @@ const pf = document.querySelector('.plan-form').elements, hint = document.getEle
 function syncTimes(ev) {
 	const s = pf.at_time.value;
 	if (s) {
-		const t = Math.min(+s.slice(0, 2) * 60 + +s.slice(3) + 1, 23 * 60 + 59);
+		const t = Math.min(+s.slice(0, 2) * 60 + +s.slice(3) + 5, 23 * 60 + 55);
 		pf.end_time.min = `${pad(Math.floor(t / 60))}:${pad(t % 60)}`;
 	} else pf.end_time.removeAttribute('min');
 	const bad = s && pf.end_time.value && pf.end_time.value <= s;
@@ -547,6 +547,13 @@ function syncTimes(ev) {
 	else if (pf.end_time.value || !s || (ev && ev.target === pf.at_time)) hint.hidden = true;
 }
 ['input', 'change'].forEach(ev => { pf.at_time.addEventListener(ev, syncTimes); pf.end_time.addEventListener(ev, syncTimes); });
+// times are kept in 5-minute steps (KakaoTalk's calendar only takes those): a time picked in between snaps to the nearest one
+const snap5 = v => {
+	if (!/^\d\d:\d\d/.test(v)) return v;
+	const m = Math.min(Math.round((+v.slice(0, 2) * 60 + +v.slice(3, 5)) / 5) * 5, 23 * 60 + 55);
+	return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
+};
+[pf.at_time, pf.end_time].forEach(i => i.addEventListener('change', () => { i.value = snap5(i.value); syncTimes({ target: i }); }));
 
 // "일정에 넣기": carry a candidate (name + map position) into the plan form so voting leads straight into scheduling
 document.querySelectorAll('[data-plan]').forEach(b => b.onclick = () => {
@@ -629,7 +636,7 @@ document.querySelectorAll('[data-edit-plan]').forEach(b => b.onclick = () => {
 	const p = JSON.parse(b.dataset.editPlan);
 	tab('plans');
 	planForm.setAttribute('action', '<?= site_url('plan') ?>/' + p.id + '/edit');
-	pf.day.value = p.day; pf.at_time.value = p.start; pf.end_time.value = p.end; pf.title.value = p.title;
+	pf.day.value = p.day; pf.at_time.value = snap5(p.start); pf.end_time.value = snap5(p.end); pf.title.value = p.title;
 	pf.place.value = p.place; pf.lat.value = p.lat === null ? '' : p.lat; pf.lng.value = p.lng === null ? '' : p.lng;
 	setDest(p.dest ? String(p.dest) : '');
 	planSubmit.textContent = '수정 저장'; cancelPlanEdit.hidden = false; editNote.hidden = false; planForm.classList.add('editing');
