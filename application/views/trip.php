@@ -295,8 +295,18 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 			</label>
 			<p class="muted wide" id="destHint" hidden>위의 여행지 버튼(전체 옆)을 눌러 어느 여행지의 일정인지 먼저 골라 주세요.</p>
 			<label class="f wide">날짜<input type="date" name="day" value="<?= html_escape($last) ?>"<?= $trip->start_date ? ' min="' . $trip->start_date . '" max="' . $trip->end_date . '"' : '' ?> required></label>
-			<label class="f">몇 시부터<input type="time" name="at_time" step="300" required></label>
-			<label class="f">몇 시까지<input type="time" name="end_time" step="300" required></label>
+			<?php // times are two dropdowns (hour, minute in 5-minute steps): nothing finer can be picked on any device. The hidden field carries "HH:MM".
+			$hours = []; for ($h = 0; $h < 24; $h++) $hours[sprintf('%02d', $h)] = ($h < 12 ? '오전 ' : '오후 ') . ($h % 12 ?: 12) . '시';
+			foreach (['at_time' => '몇 시부터', 'end_time' => '몇 시까지'] as $tf => $tl): ?>
+				<div class="f tsel" data-time="<?= $tf ?>">
+					<span><?= $tl ?></span>
+					<div class="tsel-row">
+						<select aria-label="<?= $tl ?> 시" autocomplete="off" required><option value="">시</option><?php foreach ($hours as $v => $t): ?><option value="<?= $v ?>"><?= $t ?></option><?php endforeach ?></select>
+						<select aria-label="<?= $tl ?> 분" autocomplete="off" required><option value="">분</option><?php for ($m = 0; $m < 60; $m += 5): ?><option value="<?= sprintf('%02d', $m) ?>"><?= sprintf('%02d', $m) ?>분</option><?php endfor ?></select>
+					</div>
+					<input type="hidden" name="<?= $tf ?>" value="">
+				</div>
+			<?php endforeach ?>
 			<p class="hint" id="timehint" role="alert" hidden></p>
 			<input type="text" name="title" placeholder="무엇을 할까요? (예: 흑돼지 맛집)" maxlength="150" aria-label="일정 내용" required>
 			<div class="f wide">
@@ -541,7 +551,7 @@ function syncTimes(ev) {
 		pf.end_time.min = `${pad(Math.floor(t / 60))}:${pad(t % 60)}`;
 	} else pf.end_time.removeAttribute('min');
 	const bad = s && pf.end_time.value && pf.end_time.value <= s;
-	if (bad) pf.end_time.value = '';
+	if (bad) { pf.end_time.value = ''; showTime('end_time'); }
 	if (bad) { hint.textContent = `종료 시간은 시작 시간(${s})보다 늦게 골라 주세요.`; hint.hidden = false; }
 	// keep the hint while the cleared field is still empty; drop it once a valid end is chosen or the start changes
 	else if (pf.end_time.value || !s || (ev && ev.target === pf.at_time)) hint.hidden = true;
@@ -553,7 +563,16 @@ const snap5 = v => {
 	const m = Math.min(Math.round((+v.slice(0, 2) * 60 + +v.slice(3, 5)) / 5) * 5, 23 * 60 + 55);
 	return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`;
 };
-[pf.at_time, pf.end_time].forEach(i => i.addEventListener('change', () => { i.value = snap5(i.value); syncTimes({ target: i }); }));
+// the dropdowns fill the hidden field; code that sets a hidden field itself (editing a plan) calls showTime to update its dropdowns
+const timeBox = n => document.querySelector(`[data-time="${n}"]`);
+function showTime(n) { const [h, m] = timeBox(n).querySelectorAll('select'), v = pf[n].value; h.value = v.slice(0, 2); m.value = v.slice(3, 5); }
+['at_time', 'end_time'].forEach(n => {
+	const sel = timeBox(n).querySelectorAll('select');
+	sel.forEach(x => x.addEventListener('change', () => {
+		pf[n].value = sel[0].value && sel[1].value ? `${sel[0].value}:${sel[1].value}` : '';
+		pf[n].dispatchEvent(new Event('change', { bubbles: true }));
+	}));
+});
 
 // "일정에 넣기": carry a candidate (name + map position) into the plan form so voting leads straight into scheduling
 document.querySelectorAll('[data-plan]').forEach(b => b.onclick = () => {
@@ -564,7 +583,7 @@ document.querySelectorAll('[data-plan]').forEach(b => b.onclick = () => {
 	e.title.value = e.place.value = b.dataset.plan;
 	e.lat.value = b.dataset.lat; e.lng.value = b.dataset.lng;
 	f.scrollIntoView({ block: 'center', behavior: 'smooth' });
-	(e.day.value ? e.at_time : e.day).focus({ preventScroll: true });
+	(e.day.value ? timeBox('at_time').querySelector('select') : e.day).focus({ preventScroll: true });
 });
 
 document.querySelectorAll('[data-copy]').forEach(b => b.onclick = async () => {
@@ -636,7 +655,7 @@ document.querySelectorAll('[data-edit-plan]').forEach(b => b.onclick = () => {
 	const p = JSON.parse(b.dataset.editPlan);
 	tab('plans');
 	planForm.setAttribute('action', '<?= site_url('plan') ?>/' + p.id + '/edit');
-	pf.day.value = p.day; pf.at_time.value = snap5(p.start); pf.end_time.value = snap5(p.end); pf.title.value = p.title;
+	pf.day.value = p.day; pf.at_time.value = snap5(p.start); pf.end_time.value = snap5(p.end); showTime('at_time'); showTime('end_time'); pf.title.value = p.title;
 	pf.place.value = p.place; pf.lat.value = p.lat === null ? '' : p.lat; pf.lng.value = p.lng === null ? '' : p.lng;
 	setDest(p.dest ? String(p.dest) : '');
 	planSubmit.textContent = '수정 저장'; cancelPlanEdit.hidden = false; editNote.hidden = false; planForm.classList.add('editing');

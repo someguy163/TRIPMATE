@@ -339,3 +339,9 @@ dialog.dlg::backdrop { background:rgba(10,20,26,.5); }
 .dlg-foot { margin-top:8px; }
 
 .tc { margin:0 0 16px; }
+
+/* time of a plan: hour + minute dropdowns, minutes in 5-minute steps */
+.plan-form .tsel { grid-column:1 / -1; }
+.tsel-row { display:flex; gap:6px; }
+.tsel-row select { flex:1; min-width:0; }
+.tsel-row select:first-child { flex:1.4; }
