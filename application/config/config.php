@@ -394,7 +394,7 @@ $config['encryption_key'] = '';
 $config['sess_driver'] = 'files';
 $config['sess_cookie_name'] = 'ci_session';
 $config['sess_samesite'] = 'Lax';
-$config['sess_expiration'] = 7200;
+$config['sess_expiration'] = 2592000; // 30 days (was 2 hours): the login must outlast a trip day, and a plan can be ticked hours after the page was opened
 $config['sess_save_path'] = NULL;
 $config['sess_match_ip'] = FALSE;
 $config['sess_time_to_update'] = 300;
@@ -468,7 +468,7 @@ $config['global_xss_filtering'] = FALSE;
 $config['csrf_protection'] = TRUE;
 $config['csrf_token_name'] = 'csrf_test_name';
 $config['csrf_cookie_name'] = 'csrf_cookie_name';
-$config['csrf_expire'] = 7200;
+$config['csrf_expire'] = 2592000; // 30 days (was 2 hours): a page left open for hours could not save anything ("The action you have requested is not allowed")
 $config['csrf_regenerate'] = FALSE;
 $config['csrf_exclude_uris'] = array();
 

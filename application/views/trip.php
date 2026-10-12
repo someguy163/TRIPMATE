@@ -116,6 +116,10 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 			<p class="nc-sub"></p>
 		</div>
 		<button type="button" class="btn btn-citrus" id="nc-done" hidden>완료했어요</button>
+		<div class="nc-late" id="nc-late" hidden>
+			<p class="nc-late-label">아직 체크 안 한 지난 일정</p>
+			<ul></ul>
+		</div>
 	</section>
 <?php endif ?>
 
@@ -540,7 +544,7 @@ function refreshNow() {
 	};
 	let label, s, sub, btn = true;
 	if (live) { s = live; label = timed(live) ? '지금 할 일' : '오늘 할 일'; sub = timed(live) ? span(live) : '오늘 안에 하면 돼요'; }
-	else if (late.length) { s = late[0]; label = '밀린 일정'; sub = (timed(s) ? `${span(s)} 일정이었어요` : '지난 일정이에요') + (late.length > 1 ? `, 외 ${late.length - 1}개` : ''); }
+	else if (late.length) { s = late[0]; label = '밀린 일정'; sub = timed(s) ? `${span(s)} 일정이었어요` : '지난 일정이에요'; }
 	else if (next) { s = next; label = '다음 일정'; sub = when(next); btn = false; }
 	else { label = '일정 완료'; sub = '계획한 일정을 모두 마쳤어요'; btn = false; }
 	card.querySelector('.nc-label').textContent = label;
@@ -549,6 +553,19 @@ function refreshNow() {
 	const b = document.getElementById('nc-done');
 	b.hidden = !btn;
 	b.onclick = () => { b.classList.add('busy'); s.querySelector('.dot').click(); };
+
+	// every other past plan that is still unchecked stays checkable here, however far the card has moved on
+	const rest = late.filter(x => x !== s), box = document.getElementById('nc-late'), ul = box.querySelector('ul');
+	ul.textContent = '';
+	rest.forEach(x => {
+		const li = document.createElement('li'), t = document.createElement('span'), k = document.createElement('button'), d = day(x).split('-');
+		t.className = 't'; t.textContent = x.querySelector('.what').textContent;
+		const when = document.createElement('small'); when.textContent = `${+d[1]}월 ${+d[2]}일${timed(x) ? ' ' + span(x) : ''}`; t.append(when);
+		k.type = 'button'; k.className = 'btn btn-citrus sm'; k.textContent = '완료했어요';
+		k.onclick = () => { k.classList.add('busy'); x.querySelector('.dot').click(); };
+		li.append(t, k); ul.append(li);
+	});
+	box.hidden = !rest.length;
 	card.hidden = false;
 }
 refreshNow(); setInterval(refreshNow, 60000);

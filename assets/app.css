@@ -165,7 +165,7 @@ form { margin:0; }
 .admin-note, .notice { margin:16px 0 0; padding:10px 16px; border-radius:12px; background:var(--sea-soft); color:var(--sea); font-size:14px; font-weight:600; }
 /* admin looking at a group they are not in: read only (the server refuses writes anyway) */
 .view-only .searchbar, .view-only #results, .view-only .manual, .view-only .plan-form:not(.editing), .view-only .danger,
-.view-only .acts, .view-only [data-copy], .view-only [data-share], .view-only #nc-done, .view-only .invite-first,
+.view-only .acts, .view-only [data-copy], .view-only [data-share], .view-only #nc-done, .view-only .nc-late button, .view-only .invite-first,
 .view-only .inline-add, .view-only .exp-form, .view-only .cform, .view-only .take, .view-only .tc { display:none !important; }
 .view-only .dot, .view-only .vote { pointer-events:none; }
 .manual { margin:16px 0 0; }
@@ -366,3 +366,11 @@ dialog.dlg::backdrop { background:rgba(10,20,26,.5); }
 .share-form { flex-basis:100%; display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 0 4px; }
 .share-form .who-pick { flex-basis:100%; }
 .btn.sm { min-height:34px; padding:0 16px; font-size:14px; }
+
+/* past plans that are still unchecked, listed under the card so they can be ticked after the card has moved on */
+.nc-late { flex-basis:100%; margin-top:2px; padding-top:12px; border-top:1px solid color-mix(in srgb,var(--paper) 25%,transparent); }
+.nc-late-label { font-size:13px; font-weight:700; color:var(--citrus); margin-bottom:4px; }
+.nc-late ul { list-style:none; margin:0; padding:0; }
+.nc-late li { display:flex; align-items:center; gap:12px; padding:6px 0; }
+.nc-late .t { flex:1; min-width:0; display:grid; line-height:1.35; }
+.nc-late .t small { opacity:.75; font-size:13px; }
