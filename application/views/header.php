@@ -8,6 +8,7 @@
 <meta name="theme-color" content="#0E1519" media="(prefers-color-scheme: dark)">
 <title><?= isset($title) ? html_escape($title) . ' - ' : '' ?>TripMate</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%230A7F74'/%3E%3Cpath d='M7 21c4-9 9-9 12-4s5 2 6-6' fill='none' stroke='white' stroke-width='2.5' stroke-linecap='round'/%3E%3Ccircle cx='25' cy='11' r='2.5' fill='%23FFB02E'/%3E%3C/svg%3E">
+<script>try { var t = localStorage.getItem('theme'); if (t === 'dark' || t === 'light') document.documentElement.dataset.theme = t; } catch (e) {}</script><!-- the remembered light/dark choice, before the first paint -->
 <link rel="manifest" href="<?= base_url('manifest.json') ?>">
 <link rel="apple-touch-icon" href="<?= base_url('assets/icon-180.png') ?>">
 <meta name="mobile-web-app-capable" content="yes">
@@ -31,14 +32,17 @@
 			<svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="9" fill="#0A7F74"/><path d="M7 21c4-9 9-9 12-4s5 2 6-6" fill="none" stroke="#fff" stroke-width="2.5" stroke-linecap="round"/><circle cx="25" cy="11" r="2.5" fill="#FFB02E"/></svg>
 			TripMate
 		</a>
-		<?php if ($this->session->userdata('uid')): ?>
-			<?= form_open('logout', ['class' => 'me']) ?>
-				<?= avatar($this->session->userdata('nick'), $this->session->userdata('img')) ?>
-				<span class="name"><?= html_escape($this->session->userdata('nick')) ?></span>
-				<?php if (!empty($is_admin)): ?><span class="owner">관리자</span><?php endif ?>
-				<button class="btn btn-quiet">로그아웃</button>
-			</form>
-		<?php endif ?>
+		<div class="top-right">
+			<button type="button" class="theme-btn" id="themeBtn" aria-label="화면 모드 바꾸기">🌙</button>
+			<?php if ($this->session->userdata('uid')): ?>
+				<?= form_open('logout', ['class' => 'me']) ?>
+					<?= avatar($this->session->userdata('nick'), $this->session->userdata('img')) ?>
+					<span class="name"><?= html_escape($this->session->userdata('nick')) ?></span>
+					<?php if (!empty($is_admin)): ?><span class="owner">관리자</span><?php endif ?>
+					<button class="btn btn-quiet">로그아웃</button>
+				</form>
+			<?php endif ?>
+		</div>
 	</div>
 </header>
 <main class="wrap">

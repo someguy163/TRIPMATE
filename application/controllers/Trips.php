@@ -396,13 +396,22 @@ class Trips extends CI_Controller {
 		$amount = preg_replace('/\D/', '', (string) $this->input->post('amount')); // "12,000" works too
 		$back   = "trip/$trip_id#expenses";
 		if ($title === '' || $amount === '' || (int) $amount < 1 || strlen($amount) > 9) $this->_fail('쓴 내용과 금액(1원 이상)을 입력해 주세요.', $back);
-		// the people who share this cost: only members of this trip count
-		$who = array_map('intval', (array) $this->input->post('who'));
-		$members = $who ? $this->db->select('user_id')->where('trip_id', $trip_id)->where_in('user_id', $who)->get('trip_members')->result() : [];
-		if (!$members) $this->_fail('함께한 사람을 한 명 이상 골라 주세요.', $back);
+		$who = $this->_sharers($trip_id, $back);
 		$this->db->insert('expenses', ['trip_id' => $trip_id, 'paid_by' => $this->uid, 'title' => $title, 'amount' => (int) $amount]);
-		$eid = $this->db->insert_id();
-		$this->db->insert_batch('expense_shares', array_map(function ($m) use ($eid) { return ['expense_id' => $eid, 'user_id' => $m->user_id]; }, $members));
+		$this->_set_shares($this->db->insert_id(), $who);
+		redirect($back);
+	}
+
+	// change who shares an expense that is already written down (the one who paid, the owner or an admin);
+	// an older expense without a list is shown as "everyone" and gets a real list the first time it is saved here
+	public function edit_shares($expense_id)
+	{
+		$e = $this->db->get_where('expenses', ['id' => $expense_id])->row();
+		if (!$e) show_404();
+		$this->_may_remove($e->trip_id, $e->paid_by);
+		$back = "trip/$e->trip_id#expenses";
+		$this->_set_shares($expense_id, $this->_sharers($e->trip_id, $back));
+		$this->session->set_flashdata('ok', '함께한 사람을 고쳤어요. 정산 결과가 바로 바뀌어요.');
 		redirect($back);
 	}
 
@@ -626,6 +635,21 @@ class Trips extends CI_Controller {
 			->where('m.trip_id', $trip_id)->where('m.user_id', $user_id)->get()->row();
 		if (!$m) show_404();
 		return $m;
+	}
+
+	// the ticked people of an expense form: only members of this trip count, and at least one is needed
+	private function _sharers($trip_id, $back)
+	{
+		$who = array_map('intval', (array) $this->input->post('who'));
+		$members = $who ? array_column($this->db->select('user_id')->where('trip_id', $trip_id)->where_in('user_id', $who)->get('trip_members')->result_array(), 'user_id') : [];
+		if (!$members) $this->_fail('함께한 사람을 한 명 이상 골라 주세요.', $back);
+		return $members;
+	}
+
+	private function _set_shares($expense_id, array $user_ids)
+	{
+		$this->db->delete('expense_shares', ['expense_id' => $expense_id]);
+		$this->db->insert_batch('expense_shares', array_map(function ($u) use ($expense_id) { return ['expense_id' => $expense_id, 'user_id' => $u]; }, $user_ids));
 	}
 
 	// take someone out of a group: their votes go with them so the vote bars keep matching the member count,

@@ -391,12 +391,21 @@ foreach ($plans as $pl) if ($pl->lat !== null && $pl->lng !== null) $mapped[] = 
 			<ul class="rows">
 				<?php foreach ($expenses as $e): ?>
 					<?php $sh = isset($shares[$e->id]) ? $shares[$e->id] : null; // who shares this cost (none stored: everyone) ?>
-					<li>
+					<li class="exp-row">
 						<span class="who"><?= avatar($e->payer, $e->payer_img) ?></span>
 						<span class="what"><?= html_escape($e->title) ?><small class="where"><?= html_escape($e->payer) ?> 결제 · 함께 <?= !$sh || count($sh) >= $n ? '전원' : html_escape(implode(', ', $sh)) ?></small></span>
 						<b class="money"><?= number_format($e->amount) ?>원</b>
-						<?php if ($owner || !empty($is_admin) || $e->paid_by == $me): ?>
+						<?php if ($owner || !empty($is_admin) || $e->paid_by == $me): // who paid, the owner or an admin ?>
+							<button type="button" class="pencil" data-share-edit aria-label="함께한 사람 고치기" title="함께한 사람 고치기">✎</button>
 							<?= form_open("expense/$e->id/delete") ?><button class="x" aria-label="내역 삭제">✕</button></form>
+							<?= form_open("expense/$e->id/shares", ['class' => 'share-form', 'hidden' => 'hidden']) ?>
+								<fieldset class="who-pick">
+									<legend>이 내역을 함께 나눈 사람</legend>
+									<?php foreach ($members as $m): ?><label class="pick"><input type="checkbox" name="who[]" value="<?= (int) $m->id ?>"<?= !$sh || isset($sh[$m->id]) ? ' checked' : '' ?>><?= html_escape($m->nickname) ?></label><?php endforeach ?>
+								</fieldset>
+								<button class="btn btn-primary sm">저장</button>
+								<button type="button" class="btn btn-quiet" data-share-cancel>취소</button>
+							</form>
 						<?php endif ?>
 					</li>
 				<?php endforeach ?>
@@ -466,6 +475,8 @@ function renderPins() {
 	kfit = () => { if (list.length > 1) kmap.setBounds(bounds, 40, 40, 40, 40); else { kmap.setLevel(4); kmap.setCenter(new kakao.maps.LatLng(list[0].lat, list[0].lng)); } };
 	kfit();
 }
+
+document.addEventListener('themechange', () => renderPins());
 
 function drawMap() {
 	const box = document.getElementById('map'), loading = document.getElementById('maploading');
@@ -794,6 +805,13 @@ const memberDlg = document.getElementById('memberDlg');
 document.getElementById('memberBtn').onclick = () => memberDlg.showModal();
 memberDlg.querySelector('[data-close]').onclick = () => memberDlg.close();
 memberDlg.addEventListener('click', e => { if (e.target === memberDlg) memberDlg.close(); });
+
+// an expense's "who shared it" editor opens under its row
+document.querySelectorAll('[data-share-edit]').forEach(b => b.onclick = () => {
+	const f = b.closest('li').querySelector('.share-form');
+	f.hidden = !f.hidden;
+});
+document.querySelectorAll('[data-share-cancel]').forEach(b => b.onclick = () => { const f = b.closest('.share-form'); f.reset(); f.hidden = true; });
 
 // notes on a plan: leaving or deleting one reloads the page, so the plan's notes are reopened afterwards
 document.querySelectorAll('.notes').forEach(d => d.addEventListener('submit', () => { try { sessionStorage.setItem('note', d.dataset.planId); } catch (_) {} }));
